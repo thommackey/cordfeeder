@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>https://example.com</link>
+    <description>A test RSS feed</description>
+    <ttl>60</ttl>
+    <item>
+      <title>Third Post</title>
+      <link>https://example.com/3</link>
+      <guid>https://example.com/3</guid>
+      <description>&lt;p&gt;This is the &lt;b&gt;third&lt;/b&gt; post with &lt;a href="https://example.com"&gt;HTML&lt;/a&gt; content.&lt;/p&gt;</description>
+      <author>alice@example.com (Alice)</author>
+      <pubDate>Wed, 25 Feb 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Second Post</title>
+      <link>https://example.com/2</link>
+      <guid>https://example.com/2</guid>
+      <description>Second post content</description>
+      <pubDate>Tue, 24 Feb 2026 12:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>First Post</title>
+      <link>https://example.com/1</link>
+      <guid>https://example.com/1</guid>
+      <description>First post content</description>
+      <pubDate>Mon, 23 Feb 2026 12:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

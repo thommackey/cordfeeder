@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Test Atom Feed</title>
+  <link href="https://example.com" rel="alternate"/>
+  <id>urn:uuid:test-atom-feed</id>
+  <entry>
+    <title>Atom Entry</title>
+    <link href="https://example.com/atom/1" rel="alternate"/>
+    <id>urn:uuid:entry-1</id>
+    <summary>An Atom entry summary</summary>
+    <updated>2026-02-25T12:00:00Z</updated>
+    <author><name>Bob</name></author>
+  </entry>
+</feed>
