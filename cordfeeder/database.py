@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS posted_items (
 """
 
 
+_FEED_STATE_COLUMNS = frozenset({
+    "etag", "last_modified", "last_poll_at", "next_poll_at",
+    "poll_interval", "consecutive_errors", "last_error",
+})
+
+
 class Database:
     """Async SQLite persistence layer for CordFeeder."""
 
@@ -142,6 +148,9 @@ class Database:
     async def update_feed_state(self, feed_id: int, **kwargs) -> None:
         if not kwargs:
             return
+        bad = kwargs.keys() - _FEED_STATE_COLUMNS
+        if bad:
+            raise ValueError(f"unknown feed_state columns: {sorted(bad)}")
         columns = ", ".join(f"{k} = ?" for k in kwargs)
         values = list(kwargs.values()) + [feed_id]
         await self._db.execute(
@@ -172,12 +181,11 @@ class Database:
             return await cursor.fetchone() is not None
 
     async def prune_old_items(self, days: int = 90) -> int:
-        cutoff = datetime.now(timezone.utc).isoformat()
-        # Subtract days at the SQL level for clarity
+        now = datetime.now(timezone.utc).isoformat()
         async with self._db.execute(
             """DELETE FROM posted_items
                WHERE posted_at < datetime(?, '-' || ? || ' days')""",
-            (cutoff, days),
+            (now, days),
         ) as cursor:
             count = cursor.rowcount
         await self._db.commit()

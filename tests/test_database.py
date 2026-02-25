@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 import pytest_asyncio
 
@@ -129,3 +131,42 @@ async def test_remove_feed_cascades(db: Database):
 
     assert await db.get_feed_state(feed_id) is None
     assert await db.is_item_posted(feed_id, "guid-1") is False
+
+
+@pytest.mark.asyncio
+async def test_update_feed_state_rejects_bad_column(db: Database):
+    feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
+    with pytest.raises(ValueError, match="unknown feed_state columns"):
+        await db.update_feed_state(feed_id, bogus_column="oops")
+
+
+@pytest.mark.asyncio
+async def test_prune_old_items(db: Database):
+    feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
+
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
+    recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+
+    await db._db.execute(
+        "INSERT INTO posted_items (feed_id, item_guid, posted_at) VALUES (?, ?, ?)",
+        (feed_id, "old-item", old_ts),
+    )
+    await db._db.execute(
+        "INSERT INTO posted_items (feed_id, item_guid, posted_at) VALUES (?, ?, ?)",
+        (feed_id, "recent-item", recent_ts),
+    )
+    await db._db.commit()
+
+    deleted = await db.prune_old_items(days=90)
+    assert deleted == 1
+
+    assert await db.is_item_posted(feed_id, "old-item") is False
+    assert await db.is_item_posted(feed_id, "recent-item") is True
+
+
+@pytest.mark.asyncio
+async def test_update_feed_url(db: Database):
+    feed_id = await db.add_feed("https://old.com/feed", "A", 100, 1, 42)
+    await db.update_feed_url(feed_id, "https://new.com/feed")
+    feed = await db.get_feed(feed_id)
+    assert feed["url"] == "https://new.com/feed"
