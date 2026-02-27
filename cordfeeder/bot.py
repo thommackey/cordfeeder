@@ -11,6 +11,7 @@ from discord.ext import commands
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
+from cordfeeder.discovery import FeedNotFoundError, discover_feed_url
 from cordfeeder.formatter import format_item_embed, format_item_message
 from cordfeeder.parser import extract_feed_metadata, parse_feed
 from cordfeeder.poller import Poller
@@ -82,11 +83,20 @@ class FeedCog(commands.Cog):
                 )
             return
 
-        # It's a URL — fetch and validate
-        url = url_or_id
+        # It's a URL — discover the actual feed URL, then fetch and validate
+        try:
+            feed_url = await discover_feed_url(
+                url_or_id, self.bot.poller._session, _CMD_TIMEOUT
+            )
+        except FeedNotFoundError:
+            await interaction.followup.send(
+                "No RSS/Atom feed found at that URL.", ephemeral=True
+            )
+            return
+
         try:
             async with self.bot.poller._session.get(
-                url, timeout=_CMD_TIMEOUT
+                feed_url, timeout=_CMD_TIMEOUT
             ) as resp:
                 body = await resp.text()
 
@@ -98,10 +108,10 @@ class FeedCog(commands.Cog):
             )
             return
 
-        feed_name = metadata.title or url
+        feed_name = metadata.title or feed_url
 
         # Check if this feed already exists on this server
-        existing = await self.bot.db.get_feed_by_url(url, interaction.guild_id)
+        existing = await self.bot.db.get_feed_by_url(feed_url, interaction.guild_id)
         if existing:
             feed_id = existing["id"]
             old_channel_id = existing["channel_id"]
@@ -119,7 +129,7 @@ class FeedCog(commands.Cog):
             return
 
         feed_id = await self.bot.db.add_feed(
-            url=url,
+            url=feed_url,
             name=feed_name,
             channel_id=target_channel.id,
             guild_id=interaction.guild_id,
@@ -149,7 +159,7 @@ class FeedCog(commands.Cog):
         )
         logger.info(
             "feed added via command",
-            extra={"feed_id": feed_id, "url": url, "guild_id": interaction.guild_id},
+            extra={"feed_id": feed_id, "url": feed_url, "guild_id": interaction.guild_id},
         )
 
     # ------------------------------------------------------------------
@@ -246,6 +256,18 @@ class FeedCog(commands.Cog):
                 return
             feed_url = feed["url"]
             feed_name_override = feed["name"]
+
+        # Discover actual feed URL if not already resolved from DB
+        if not feed_name_override:
+            try:
+                feed_url = await discover_feed_url(
+                    feed_url, self.bot.poller._session, _CMD_TIMEOUT
+                )
+            except FeedNotFoundError:
+                await interaction.followup.send(
+                    "No RSS/Atom feed found at that URL.", ephemeral=True
+                )
+                return
 
         try:
             async with self.bot.poller._session.get(
