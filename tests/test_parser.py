@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from cordfeeder.parser import FeedItem, FeedMetadata, parse_feed, extract_feed_metadata
+from cordfeeder.parser import (
+    FeedItem, FeedMetadata, parse_feed, extract_feed_metadata,
+    _strip_boilerplate,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -86,6 +89,77 @@ class TestParseRSSFeed:
         </item></channel></rss>"""
         items = parse_feed(xml)
         assert items[0].image_url == "https://x.com/comic.png"
+
+
+class TestStripBoilerplate:
+    def test_strips_common_prefix(self):
+        summaries = [
+            "Welcome to my newsletter. Here is the first story about cats.",
+            "Welcome to my newsletter. Here is the second story about dogs.",
+            "Welcome to my newsletter. Here is the third story about fish.",
+        ]
+        result = _strip_boilerplate(summaries)
+        assert all(not s.startswith("Welcome") for s in result)
+        assert "first story about cats" in result[0]
+        assert "second story about dogs" in result[1]
+
+    def test_strips_common_suffix(self):
+        summaries = [
+            "Story about cats. Subscribe to get more content delivered weekly.",
+            "Story about dogs. Subscribe to get more content delivered weekly.",
+            "Story about fish. Subscribe to get more content delivered weekly.",
+        ]
+        result = _strip_boilerplate(summaries)
+        assert all(not s.endswith("weekly.") for s in result)
+        assert "Story about cats" in result[0]
+
+    def test_ignores_short_common_prefix(self):
+        summaries = [
+            "The cat sat on the mat.",
+            "The dog lay on the rug.",
+        ]
+        result = _strip_boilerplate(summaries)
+        assert result == summaries  # "The " is too short to be boilerplate
+
+    def test_single_entry_unchanged(self):
+        summaries = ["Welcome to my newsletter. Here is the story."]
+        result = _strip_boilerplate(summaries)
+        assert result == summaries
+
+    def test_strips_both_prefix_and_suffix(self):
+        summaries = [
+            "Welcome to Import AI. Robots are taking over manufacturing. Subscribe now for free!",
+            "Welcome to Import AI. New drone regulations proposed today. Subscribe now for free!",
+        ]
+        result = _strip_boilerplate(summaries)
+        assert "Robots are taking over" in result[0]
+        assert "drone regulations" in result[1]
+        assert not result[0].startswith("Welcome")
+        assert not result[0].endswith("free!")
+
+    def test_integration_in_parse_feed(self):
+        """Boilerplate stripped from items that share a common preamble."""
+        boilerplate = "Welcome to our weekly newsletter about technology and science. Subscribe now! "
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <title>Boilerplate Feed</title>
+            <item>
+              <title>Post A</title>
+              <link>https://example.com/a</link>
+              <description>{boilerplate}Actual content about AI advances.</description>
+            </item>
+            <item>
+              <title>Post B</title>
+              <link>https://example.com/b</link>
+              <description>{boilerplate}Actual content about quantum computing.</description>
+            </item>
+          </channel>
+        </rss>"""
+        items = parse_feed(xml)
+        assert not items[0].summary.startswith("Welcome")
+        assert "AI advances" in items[0].summary
+        assert "quantum computing" in items[1].summary
 
 
 class TestExtractFeedMetadata:

@@ -50,6 +50,88 @@ def _truncate(text: str, max_len: int = 300) -> str:
     return truncated + "..."
 
 
+# Minimum length for a common prefix/suffix to be considered boilerplate.
+# Short common strings (e.g. "The ") are just coincidence, not boilerplate.
+_BOILERPLATE_MIN_LEN = 20
+
+
+def _strip_boilerplate(summaries: list[str]) -> list[str]:
+    """Remove common prefix/suffix boilerplate shared across most summaries.
+
+    If a supermajority (>=80%) of summaries share a long (>=20 char) prefix
+    or suffix, it's almost certainly newsletter boilerplate.  Strip it at a
+    word boundary.  Entries that don't match the detected boilerplate are
+    left unchanged.
+    """
+    if len(summaries) < 2:
+        return summaries
+
+    # --- common prefix ---
+    prefix = _majority_common_prefix(summaries)
+    if len(prefix) >= _BOILERPLATE_MIN_LEN:
+        cut = len(prefix)
+        summaries = [
+            s[cut:].lstrip() if s.startswith(prefix) else s
+            for s in summaries
+        ]
+
+    # --- common suffix ---
+    suffix = _majority_common_suffix(summaries)
+    if len(suffix) >= _BOILERPLATE_MIN_LEN:
+        summaries = [
+            s[: -len(suffix)].rstrip() if s.endswith(suffix) else s
+            for s in summaries
+        ]
+
+    return summaries
+
+
+# Fraction of entries that must share the prefix/suffix to count.
+_SUPERMAJORITY = 0.8
+
+
+def _majority_common_prefix(strings: list[str]) -> str:
+    """Find the longest prefix shared by >=80% of strings, at a word boundary."""
+    if not strings:
+        return ""
+    threshold = max(2, int(len(strings) * _SUPERMAJORITY))
+
+    # Start with the full text of the shortest string as candidate,
+    # then shrink character-by-character until enough strings match.
+    candidate = min(strings, key=len)
+    while candidate:
+        matches = sum(1 for s in strings if s.startswith(candidate))
+        if matches >= threshold:
+            break
+        candidate = candidate[:-1]
+
+    if not candidate:
+        return ""
+    # Snap back to last space to avoid partial words
+    last_space = candidate.rfind(" ")
+    return candidate[: last_space + 1] if last_space >= 0 else ""
+
+
+def _majority_common_suffix(strings: list[str]) -> str:
+    """Find the longest suffix shared by >=80% of strings, at a word boundary."""
+    if not strings:
+        return ""
+    threshold = max(2, int(len(strings) * _SUPERMAJORITY))
+
+    candidate = min(strings, key=len)
+    while candidate:
+        matches = sum(1 for s in strings if s.endswith(candidate))
+        if matches >= threshold:
+            break
+        candidate = candidate[1:]
+
+    if not candidate:
+        return ""
+    # Snap forward to first space to avoid partial words
+    first_space = candidate.find(" ")
+    return candidate[first_space + 1 :] if first_space >= 0 else ""
+
+
 _IMG_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
 
 
@@ -101,17 +183,26 @@ def parse_feed(raw: str) -> list[FeedItem]:
     if parsed.bozo and not parsed.entries:
         raise ValueError(f"Unparseable feed: {parsed.bozo_exception}")
 
-    items: list[FeedItem] = []
+    # First pass: extract all fields, strip HTML but don't truncate yet.
+    entries_data: list[tuple[dict, str]] = []
     for entry in parsed.entries:
         summary_raw = entry.get("summary", "") or entry.get("description", "") or ""
-        summary = _truncate(_strip_html(summary_raw))
+        stripped = _strip_html(summary_raw)
+        entries_data.append((entry, stripped))
 
+    # Strip boilerplate shared across all entries in this batch.
+    stripped_summaries = [s for _, s in entries_data]
+    cleaned_summaries = _strip_boilerplate(stripped_summaries)
+
+    # Second pass: truncate and build FeedItems.
+    items: list[FeedItem] = []
+    for (entry, _), summary in zip(entries_data, cleaned_summaries):
         items.append(
             FeedItem(
                 title=entry.get("title", ""),
                 link=entry.get("link", ""),
                 guid=entry.get("id", "") or entry.get("link", ""),
-                summary=summary,
+                summary=_truncate(summary),
                 author=entry.get("author"),
                 published=entry.get("published"),
                 image_url=_extract_image(entry),
