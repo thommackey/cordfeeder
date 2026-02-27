@@ -13,7 +13,7 @@ from dateutil import parser as dateutil_parser
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
-from cordfeeder.formatter import format_item_embed
+from cordfeeder.formatter import format_item_message
 from cordfeeder.parser import FeedItem, parse_feed
 
 logger = logging.getLogger(__name__)
@@ -304,13 +304,12 @@ class Poller:
             )
             return
 
-        embed = format_item_embed(
+        content = format_item_message(
             item=item,
             feed_name=feed_name,
-            feed_url=feed_url,
             feed_id=feed_id,
         )
-        msg = await channel.send(embed=embed)
+        msg = await channel.send(content)
         message_id = msg.id if hasattr(msg, "id") else None
         await self.db.record_posted_item(feed_id, item.guid, message_id)
 

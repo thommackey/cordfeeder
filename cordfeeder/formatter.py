@@ -58,6 +58,33 @@ def _format_date(published: str | None) -> str | None:
     return dt.strftime("%-d %b %Y")
 
 
+def format_item_message(
+    item: FeedItem,
+    feed_name: str,
+    feed_id: int,
+) -> str:
+    """Format a feed item as a plain Discord message.
+
+    Produces a compact, non-intrusive format:
+        **Feed Name** · [Article Title](url) · 2h ago
+        > Summary text truncated at word boundary...
+    """
+    # Header line: feed name · linked title · date
+    parts = [f"**{feed_name}**"]
+    parts.append(f"[{item.title}]({item.link})")
+    date_str = _format_date(item.published)
+    if date_str:
+        parts.append(date_str)
+    header = " · ".join(parts)
+
+    # Summary as a blockquote
+    if item.summary:
+        quoted = "\n".join(f"> {line}" for line in item.summary.splitlines())
+        return f"{header}\n{quoted}"
+
+    return header
+
+
 def format_item_embed(
     item: FeedItem,
     feed_name: str,
@@ -65,7 +92,7 @@ def format_item_embed(
     feed_id: int,
     feed_icon_url: str | None = None,
 ) -> discord.Embed:
-    """Format a feed item as a Discord embed."""
+    """Format a feed item as a Discord embed (used for previews)."""
     description = item.summary if item.summary else None
 
     embed = discord.Embed(

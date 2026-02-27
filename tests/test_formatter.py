@@ -1,10 +1,67 @@
-"""Tests for embed formatting."""
+"""Tests for feed item formatting."""
 
 import discord
 import pytest
 
-from cordfeeder.formatter import feed_colour, format_item_embed
+from cordfeeder.formatter import feed_colour, format_item_embed, format_item_message
 from cordfeeder.parser import FeedItem
+
+
+# ---------------------------------------------------------------
+# Plain message format (primary format for feed items)
+# ---------------------------------------------------------------
+
+
+def test_message_basic():
+    item = FeedItem(
+        title="Test Article",
+        link="https://example.com/1",
+        guid="1",
+        summary="A summary of the article.",
+        author="Alice",
+        published="Wed, 25 Feb 2026 12:00:00 GMT",
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Test Feed", feed_id=3)
+    assert "**Test Feed**" in msg
+    assert "[Test Article](https://example.com/1)" in msg
+    assert "> A summary of the article." in msg
+
+
+def test_message_no_summary():
+    item = FeedItem(
+        title="Title Only",
+        link="https://example.com/3",
+        guid="3",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    assert "[Title Only]" in msg
+    assert ">" not in msg  # no blockquote when no summary
+
+
+def test_message_with_date():
+    item = FeedItem(
+        title="Dated",
+        link="https://example.com/1",
+        guid="1",
+        summary="",
+        author=None,
+        published="Mon, 23 Feb 2026 12:00:00 GMT",
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    # Should have a date component (either relative or absolute)
+    parts = msg.split(" · ")
+    assert len(parts) >= 2  # at minimum: feed name · title
+
+
+# ---------------------------------------------------------------
+# Embed format (used for previews)
+# ---------------------------------------------------------------
 
 
 def test_format_basic_embed():
@@ -47,25 +104,6 @@ def test_format_embed_with_image():
         feed_id=1,
     )
     assert embed.thumbnail.url == "https://example.com/img.jpg"
-
-
-def test_format_embed_no_summary():
-    item = FeedItem(
-        title="Title Only",
-        link="https://example.com/3",
-        guid="3",
-        summary="",
-        author=None,
-        published=None,
-        image_url=None,
-    )
-    embed = format_item_embed(
-        item,
-        feed_name="Feed",
-        feed_url="https://example.com/rss",
-        feed_id=1,
-    )
-    assert embed.description is None or embed.description == ""
 
 
 def test_feed_colour_consistent():

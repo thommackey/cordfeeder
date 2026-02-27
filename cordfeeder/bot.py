@@ -11,7 +11,7 @@ from discord.ext import commands
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
-from cordfeeder.formatter import format_item_embed
+from cordfeeder.formatter import format_item_embed, format_item_message
 from cordfeeder.parser import extract_feed_metadata, parse_feed
 from cordfeeder.poller import Poller
 
@@ -87,14 +87,12 @@ class FeedCog(commands.Cog):
         count = self.bot.config.initial_items_count
         initial = items[:count] if items else []
         for item in reversed(initial):
-            embed = format_item_embed(
+            content = format_item_message(
                 item=item,
                 feed_name=feed_name,
-                feed_url=url,
                 feed_id=feed_id,
-                feed_icon_url=metadata.image_url,
             )
-            msg = await target_channel.send(embed=embed)
+            msg = await target_channel.send(content)
             await self.bot.db.record_posted_item(feed_id, item.guid, message_id=msg.id)
 
         # Mark all parsed items as posted so the poller only picks up
