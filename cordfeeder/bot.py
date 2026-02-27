@@ -185,17 +185,30 @@ class FeedCog(commands.Cog):
     # ------------------------------------------------------------------
 
     @feed_group.command(name="preview", description="Preview the latest item from a feed")
-    @app_commands.describe(url="Feed URL to preview")
+    @app_commands.describe(url_or_id="Feed URL or feed ID to preview")
     async def feed_preview(
         self,
         interaction: discord.Interaction,
-        url: str,
+        url_or_id: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
 
+        # Resolve feed ID to URL if numeric
+        feed_url = url_or_id
+        feed_name_override = None
+        if url_or_id.isdigit():
+            feed = await self.bot.db.get_feed(int(url_or_id))
+            if not feed or feed["guild_id"] != interaction.guild_id:
+                await interaction.followup.send(
+                    f"Feed `{url_or_id}` not found in this server.", ephemeral=True
+                )
+                return
+            feed_url = feed["url"]
+            feed_name_override = feed["name"]
+
         try:
             async with self.bot.poller._session.get(
-                url, timeout=_CMD_TIMEOUT
+                feed_url, timeout=_CMD_TIMEOUT
             ) as resp:
                 body = await resp.text()
 
@@ -213,6 +226,7 @@ class FeedCog(commands.Cog):
             )
             return
 
+        display_name = feed_name_override or metadata.title
         item = items[0]
         embed = discord.Embed(
             title=item.title,
@@ -220,11 +234,13 @@ class FeedCog(commands.Cog):
             description=item.summary or None,
             colour=discord.Colour.light_grey(),
         )
-        if metadata.title:
-            embed.set_author(name=metadata.title)
+        if display_name:
+            embed.set_author(name=display_name)
         if item.image_url:
             embed.set_thumbnail(url=item.image_url)
-        embed.set_footer(text="Preview \u00b7 not subscribed")
+
+        footer = "Preview · not subscribed" if url_or_id == feed_url else "Preview"
+        embed.set_footer(text=footer)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
