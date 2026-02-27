@@ -118,7 +118,8 @@ class Poller:
         logger.info("poller stopped")
 
     async def _poll_loop(self) -> None:
-        """Main loop: poll due feeds, then sleep."""
+        """Main loop: poll due feeds, then sleep.  Prunes old posted_items daily."""
+        last_prune = datetime.min.replace(tzinfo=timezone.utc)
         while self._running:
             try:
                 due_feeds = await self.db.get_due_feeds()
@@ -126,6 +127,12 @@ class Poller:
                     logger.info("polling due feeds", extra={"count": len(due_feeds)})
                     tasks = [self._poll_feed(f) for f in due_feeds]
                     await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Prune stale posted_items once per day
+                now = datetime.now(timezone.utc)
+                if (now - last_prune).total_seconds() >= 86400:
+                    await self.db.prune_old_items()
+                    last_prune = now
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -166,7 +173,10 @@ class Poller:
 
                 if status in (429, 403):
                     retry_raw = resp.headers.get("Retry-After")
-                    retry_after = int(retry_raw) if retry_raw else None
+                    try:
+                        retry_after = int(retry_raw) if retry_raw else None
+                    except (ValueError, TypeError):
+                        retry_after = None
                     raise FeedRateLimitError(
                         feed_id=feed_id, url=url, retry_after=retry_after
                     )
@@ -322,10 +332,11 @@ class Poller:
         """Schedule the next poll with 0-25% jitter added."""
         jitter = random.uniform(0, interval * 0.25)
         actual = int(interval + jitter)
-        next_poll = datetime.now(timezone.utc) + timedelta(seconds=actual)
+        now = datetime.now(timezone.utc)
+        next_poll = now + timedelta(seconds=actual)
         await self.db.update_feed_state(
             feed_id,
-            last_poll_at=datetime.now(timezone.utc).isoformat(),
+            last_poll_at=now.isoformat(),
             next_poll_at=next_poll.isoformat(),
             poll_interval=interval,
         )

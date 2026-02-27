@@ -185,6 +185,22 @@ class TestFetchFeed:
         assert exc_info.value.retry_after == 120
 
     @pytest.mark.asyncio
+    async def test_raises_rate_limit_with_date_retry_after(self, poller):
+        """Retry-After can be an HTTP date string per RFC 7231 — must not crash."""
+        mock_response = self._mock_response(
+            429, headers={"Retry-After": "Thu, 27 Feb 2026 13:00:00 GMT"}
+        )
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        poller._session = mock_session
+
+        with pytest.raises(FeedRateLimitError) as exc_info:
+            await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
+        # Should not crash; retry_after should be None when non-numeric
+        assert exc_info.value.retry_after is None
+
+    @pytest.mark.asyncio
     async def test_raises_server_error_on_5xx(self, poller):
         mock_response = self._mock_response(503)
 

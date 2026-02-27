@@ -44,7 +44,7 @@ class JSONFormatter(logging.Formatter):
             exc_type, exc_val, exc_tb = record.exc_info
             payload["err.type"] = type(exc_val).__qualname__
             payload["err.msg"] = str(exc_val)
-            payload["err.stack"] = "\\n".join(
+            payload["err.stack"] = "".join(
                 traceback.format_exception(exc_type, exc_val, exc_tb)
             ).rstrip()
 

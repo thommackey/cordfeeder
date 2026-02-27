@@ -3,6 +3,8 @@ __pycache__/
 .env
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 .venv/
 dist/
 *.egg-info/
