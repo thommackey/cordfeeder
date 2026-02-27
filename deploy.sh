@@ -27,6 +27,9 @@ cd /root/cordfeeder
 echo "[deploy] Pulling latest code..."
 git pull origin main
 
+echo "[deploy] Ensuring data directory exists..."
+mkdir -p data && chown 1000:1000 data
+
 echo "[deploy] Building and starting container..."
 docker compose up -d --build
 
