@@ -75,20 +75,33 @@ class FeedCog(commands.Cog):
             return
 
         feed_name = metadata.title or url
-        try:
-            feed_id = await self.bot.db.add_feed(
-                url=url,
-                name=feed_name,
-                channel_id=target_channel.id,
-                guild_id=interaction.guild_id,
-                added_by=interaction.user.id,
-            )
-        except Exception:
-            await interaction.followup.send(
-                f"That feed is already subscribed on this server. Use `/feed list` to see existing feeds.",
-                ephemeral=True,
-            )
+
+        # Check if this feed already exists on this server
+        existing = await self.bot.db.get_feed_by_url(url, interaction.guild_id)
+        if existing:
+            # Move to the new channel
+            feed_id = existing["id"]
+            old_channel_id = existing["channel_id"]
+            await self.bot.db.update_feed_channel(feed_id, target_channel.id)
+            if old_channel_id == target_channel.id:
+                await interaction.followup.send(
+                    f"**{feed_name}** (ID `{feed_id}`) is already in {target_channel.mention}.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"Moved **{feed_name}** (ID `{feed_id}`) to {target_channel.mention}.",
+                    ephemeral=True,
+                )
             return
+
+        feed_id = await self.bot.db.add_feed(
+            url=url,
+            name=feed_name,
+            channel_id=target_channel.id,
+            guild_id=interaction.guild_id,
+            added_by=interaction.user.id,
+        )
 
         # Post initial items (most recent N, oldest-first)
         count = self.bot.config.initial_items_count

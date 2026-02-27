@@ -124,6 +124,23 @@ class Database:
             rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
+    async def get_feed_by_url(self, url: str, guild_id: int) -> dict | None:
+        async with self._db.execute(
+            "SELECT * FROM feeds WHERE url = ? AND guild_id = ?", (url, guild_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def update_feed_channel(self, feed_id: int, channel_id: int) -> None:
+        await self._db.execute(
+            "UPDATE feeds SET channel_id = ? WHERE id = ?", (channel_id, feed_id)
+        )
+        await self._db.commit()
+        logger.info(
+            "feed channel updated",
+            extra={"feed_id": feed_id, "channel_id": channel_id},
+        )
+
     async def update_feed_url(self, feed_id: int, new_url: str) -> None:
         await self._db.execute(
             "UPDATE feeds SET url = ? WHERE id = ?", (new_url, feed_id)
