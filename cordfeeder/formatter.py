@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from datetime import datetime, timezone
 
 import discord
 from dateutil import parser as dateutil_parser
 
 from cordfeeder.parser import FeedItem
+
+# Matches Discord mention patterns: @everyone, @here, <@id>, <@!id>, <@&id>
+_MENTION_RE = re.compile(r"@(everyone|here)|<@[!&]?\d+>")
+
+# Characters with special meaning in Discord markdown
+_MD_SPECIAL = str.maketrans({
+    "*": "\\*",
+    "_": "\\_",
+    "~": "\\~",
+    "`": "\\`",
+    "|": "\\|",
+    ">": "\\>",
+    "[": "\\[",
+    "]": "\\]",
+})
+
+
+def _sanitise_mentions(text: str) -> str:
+    """Neutralise Discord mentions so feed content can't ping users."""
+    return _MENTION_RE.sub(lambda m: m.group(0).replace("@", "@\u200b"), text)
+
+
+def _sanitise_markdown(text: str) -> str:
+    """Escape Discord markdown special characters in untrusted text."""
+    return text.translate(_MD_SPECIAL)
 
 
 def feed_colour(feed_url: str) -> discord.Colour:
@@ -72,10 +98,16 @@ def format_item_message(
     URLs are wrapped in <> to suppress Discord's auto link preview.
     If the item has an image, it's shown inline instead of the summary.
     """
+    # Sanitise untrusted feed content to prevent mention injection and
+    # markdown escape attacks.
+    safe_name = _sanitise_mentions(feed_name)
+    safe_title = _sanitise_mentions(_sanitise_markdown(item.title))
+    safe_summary = _sanitise_mentions(item.summary) if item.summary else ""
+
     # Header line: feed name · linked title · date
     # Wrap URL in <> to suppress Discord's automatic link preview
-    parts = [f"**{feed_name}**"]
-    parts.append(f"[{item.title}](<{item.link}>)")
+    parts = [f"**{safe_name}**"]
+    parts.append(f"[{safe_title}](<{item.link}>)")
     date_str = _format_date(item.published)
     if date_str:
         parts.append(date_str)
@@ -85,13 +117,13 @@ def format_item_message(
     # If the summary has substantial text, treat images as decorative thumbnails
     # and show the text instead.  Only show images inline when the summary is
     # minimal — i.e. the image IS the content.
-    text_primary = bool(item.summary and len(item.summary) > 100)
+    text_primary = bool(safe_summary and len(item.summary) > 100)
 
     if item.image_url and not text_primary:
         return f"{header}\n{item.image_url}"
 
-    if item.summary:
-        quoted = "\n".join(f"> {line}" for line in item.summary.splitlines())
+    if safe_summary:
+        quoted = "\n".join(f"> {line}" for line in safe_summary.splitlines())
         return f"{header}\n{quoted}"
 
     return header

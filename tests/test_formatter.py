@@ -142,6 +142,43 @@ def test_format_embed_with_image():
     assert embed.thumbnail.url == "https://example.com/img.jpg"
 
 
+def test_message_escapes_discord_mentions():
+    """Feed content must not be able to trigger @everyone or @here mentions."""
+    item = FeedItem(
+        title="Breaking @everyone news",
+        link="https://example.com/1",
+        guid="1",
+        summary="Hey @here check this out. Also <@123456> is cool.",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Evil @everyone Feed", feed_id=1)
+    # Exact @everyone/@here must be broken (zero-width space inserted)
+    assert "@everyone" not in msg
+    assert "@here" not in msg
+    # User mention pattern <@DIGITS> must be broken
+    assert "<@123456>" not in msg
+
+
+def test_message_escapes_markdown_injection():
+    """Feed titles/names must not break out of their markdown formatting."""
+    item = FeedItem(
+        title="test**](https://evil.com) fake [link",
+        link="https://example.com/1",
+        guid="1",
+        summary="Normal summary text that is long enough to be text-primary for this test, with plenty of content here.",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Normal Feed", feed_id=1)
+    # The ** in the title should be escaped so it can't break bold formatting
+    assert "\\*\\*" in msg
+    # The ] should be escaped so it can't close the markdown link
+    assert "\\]" in msg
+
+
 def test_feed_colour_consistent():
     c1 = feed_colour("https://example.com/rss")
     c2 = feed_colour("https://example.com/rss")
