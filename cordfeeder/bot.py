@@ -274,7 +274,6 @@ class CordFeederBot(commands.Bot):
     async def setup_hook(self) -> None:
         cog = FeedCog(self)
         await self.add_cog(cog)
-        self.tree.copy_global_to(guild=None)
         await self.tree.sync()
         await self.poller.start()
         logger.info("bot setup complete")
