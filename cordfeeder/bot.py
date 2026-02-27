@@ -37,15 +37,15 @@ class FeedCog(commands.Cog):
     # /feed add <url> [channel]
     # ------------------------------------------------------------------
 
-    @feed_group.command(name="add", description="Subscribe to an RSS/Atom feed")
+    @feed_group.command(name="add", description="Subscribe to a feed (URL) or move an existing feed (ID) to this channel")
     @app_commands.describe(
-        url="Feed URL to subscribe to",
+        url_or_id="Feed URL to subscribe to, or feed ID to move",
         channel="Channel to post items in (defaults to current)",
     )
     async def feed_add(
         self,
         interaction: discord.Interaction,
-        url: str,
+        url_or_id: str,
         channel: discord.TextChannel | None = None,
     ) -> None:
         if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
@@ -60,6 +60,30 @@ class FeedCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         target_channel = channel or interaction.channel
 
+        # If it's a feed ID, just move the existing feed
+        if url_or_id.isdigit():
+            feed = await self.bot.db.get_feed(int(url_or_id))
+            if not feed or feed["guild_id"] != interaction.guild_id:
+                await interaction.followup.send(
+                    f"Feed `{url_or_id}` not found in this server.", ephemeral=True
+                )
+                return
+            old_channel_id = feed["channel_id"]
+            await self.bot.db.update_feed_channel(feed["id"], target_channel.id)
+            if old_channel_id == target_channel.id:
+                await interaction.followup.send(
+                    f"**{feed['name']}** (ID `{feed['id']}`) is already in {target_channel.mention}.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    f"Moved **{feed['name']}** (ID `{feed['id']}`) to {target_channel.mention}.",
+                    ephemeral=True,
+                )
+            return
+
+        # It's a URL — fetch and validate
+        url = url_or_id
         try:
             async with self.bot.poller._session.get(
                 url, timeout=_CMD_TIMEOUT
@@ -79,7 +103,6 @@ class FeedCog(commands.Cog):
         # Check if this feed already exists on this server
         existing = await self.bot.db.get_feed_by_url(url, interaction.guild_id)
         if existing:
-            # Move to the new channel
             feed_id = existing["id"]
             old_channel_id = existing["channel_id"]
             await self.bot.db.update_feed_channel(feed_id, target_channel.id)
