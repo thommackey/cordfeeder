@@ -179,6 +179,113 @@ def test_message_escapes_markdown_injection():
     assert "\\]" in msg
 
 
+# ---------------------------------------------------------------
+# URL and content injection attacks
+# ---------------------------------------------------------------
+
+
+def test_message_link_breakout_via_angle_bracket():
+    """A > in the link URL must not break out of the [title](<url>) syntax."""
+    item = FeedItem(
+        title="Normal Title",
+        link="https://evil.com>) HACKED https://phishing.com",
+        guid="1",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    # The injected content must not appear outside the link
+    assert "HACKED" not in msg
+    assert "phishing.com" not in msg
+
+
+def test_message_link_with_newlines():
+    """Newlines in a link URL must not inject extra lines into the message."""
+    item = FeedItem(
+        title="Normal Title",
+        link="https://evil.com\nhttps://phishing.com",
+        guid="1",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    assert "phishing.com" not in msg
+    # Message should be a single header line (no extra lines injected)
+    assert msg.count("\n") == 0
+
+
+def test_message_link_non_http_rejected():
+    """Non-http(s) links must not be rendered as clickable links."""
+    item = FeedItem(
+        title="Normal Title",
+        link="javascript:alert(1)",
+        guid="1",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    assert "javascript:" not in msg
+
+
+def test_message_image_url_newline_injection():
+    """Newlines in image_url must not inject additional content lines."""
+    item = FeedItem(
+        title="Comic",
+        link="https://example.com/1",
+        guid="1",
+        summary="Short.",
+        author=None,
+        published=None,
+        image_url="https://example.com/img.png\nhttps://phishing.com/evil",
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    assert "phishing.com" not in msg
+
+
+def test_message_feed_name_newline_injection():
+    """Newlines in feed name must not visually break out of the header line."""
+    item = FeedItem(
+        title="Normal Title",
+        link="https://example.com/1",
+        guid="1",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(
+        item,
+        feed_name="Legit Feed\nFake urgent message from bot",
+        feed_id=1,
+    )
+    # Must be a single header line — no newline breakout
+    assert msg.count("\n") == 0
+    # Injected text should be flattened into the feed name, not on its own line
+    assert msg.startswith("**Legit Feed")
+
+
+def test_message_title_newline_injection():
+    """Newlines in title must not visually break out of the header line."""
+    item = FeedItem(
+        title="Real Title\nInjected line that looks like bot content",
+        link="https://example.com/1",
+        guid="1",
+        summary="",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+    msg = format_item_message(item, feed_name="Feed", feed_id=1)
+    # Must be a single header line — no newline breakout
+    assert msg.count("\n") == 0
+
+
 def test_feed_colour_consistent():
     c1 = feed_colour("https://example.com/rss")
     c2 = feed_colour("https://example.com/rss")

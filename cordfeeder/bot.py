@@ -12,13 +12,18 @@ from discord.ext import commands
 from cordfeeder.config import Config
 from cordfeeder.database import Database
 from cordfeeder.discovery import FeedNotFoundError, discover_feed_url
-from cordfeeder.formatter import format_item_message
+from cordfeeder.formatter import sanitise_mentions, format_item_message
 from cordfeeder.parser import extract_feed_metadata, parse_feed
 from cordfeeder.poller import Poller
 
 logger = logging.getLogger(__name__)
 
 _CMD_TIMEOUT = aiohttp.ClientTimeout(total=15)
+
+
+def _safe_name(name: str) -> str:
+    """Sanitise a feed name for use in command responses."""
+    return sanitise_mentions(name).replace("\n", " ").replace("\r", "")
 
 
 def has_feed_manager_role(interaction: discord.Interaction, role_name: str) -> bool:
@@ -71,14 +76,15 @@ class FeedCog(commands.Cog):
                 return
             old_channel_id = feed["channel_id"]
             await self.bot.db.update_feed_channel(feed["id"], target_channel.id)
+            safe = _safe_name(feed["name"])
             if old_channel_id == target_channel.id:
                 await interaction.followup.send(
-                    f"**{feed['name']}** (ID `{feed['id']}`) is already in {target_channel.mention}.",
+                    f"**{safe}** (ID `{feed['id']}`) is already in {target_channel.mention}.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"Moved **{feed['name']}** (ID `{feed['id']}`) to {target_channel.mention}.",
+                    f"Moved **{safe}** (ID `{feed['id']}`) to {target_channel.mention}.",
                     ephemeral=True,
                 )
             return
@@ -109,6 +115,7 @@ class FeedCog(commands.Cog):
             return
 
         feed_name = metadata.title or feed_url
+        safe = _safe_name(feed_name)
 
         # Check if this feed already exists on this server
         existing = await self.bot.db.get_feed_by_url(feed_url, interaction.guild_id)
@@ -118,12 +125,12 @@ class FeedCog(commands.Cog):
             await self.bot.db.update_feed_channel(feed_id, target_channel.id)
             if old_channel_id == target_channel.id:
                 await interaction.followup.send(
-                    f"**{feed_name}** (ID `{feed_id}`) is already in {target_channel.mention}.",
+                    f"**{safe}** (ID `{feed_id}`) is already in {target_channel.mention}.",
                     ephemeral=True,
                 )
             else:
                 await interaction.followup.send(
-                    f"Moved **{feed_name}** (ID `{feed_id}`) to {target_channel.mention}.",
+                    f"Moved **{safe}** (ID `{feed_id}`) to {target_channel.mention}.",
                     ephemeral=True,
                 )
             return
@@ -160,7 +167,7 @@ class FeedCog(commands.Cog):
                 break
 
         await interaction.followup.send(
-            f"Subscribed to **{feed_name}** (ID `{feed_id}`) in {target_channel.mention}.",
+            f"Subscribed to **{safe}** (ID `{feed_id}`) in {target_channel.mention}.",
             ephemeral=True,
         )
         logger.info(
@@ -197,7 +204,7 @@ class FeedCog(commands.Cog):
 
         await self.bot.db.remove_feed(id)
         await interaction.response.send_message(
-            f"Removed feed **{feed['name']}** (ID `{id}`).", ephemeral=True
+            f"Removed feed **{_safe_name(feed['name'])}** (ID `{id}`).", ephemeral=True
         )
         logger.info(
             "feed removed via command",
@@ -222,7 +229,7 @@ class FeedCog(commands.Cog):
         for f in feeds:
             interval_min = (f.get("poll_interval") or 900) // 60
             line = (
-                f"**{f['name']}** (ID `{f['id']}`)\n"
+                f"**{_safe_name(f['name'])}** (ID `{f['id']}`)\n"
                 f"  <#{f['channel_id']}> · every {interval_min}m"
             )
             errors = f.get("consecutive_errors", 0)

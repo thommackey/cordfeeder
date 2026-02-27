@@ -37,6 +37,33 @@ def _sanitise_markdown(text: str) -> str:
     return text.translate(_MD_SPECIAL)
 
 
+def _sanitise_url(url: str) -> str:
+    """Sanitise a URL for safe embedding in Discord markdown.
+
+    Prevents breakout from [text](<url>) syntax by:
+    - Truncating at the first whitespace (URLs can't contain unencoded spaces/newlines)
+    - Encoding > which closes the <url> wrapper
+    - Rejecting non-http(s) schemes
+
+    Returns empty string if the URL is unsafe or empty.
+    """
+    if not url:
+        return ""
+    # Truncate at first whitespace/newline — anything after is injection payload
+    url = url.strip().split()[0] if url.strip() else ""
+    # Encode > to prevent breaking out of <url> angle-bracket wrappers
+    url = url.replace(">", "%3E")
+    # Only allow http/https — no javascript:, data:, file:, etc.
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    return url
+
+
+def _strip_newlines(text: str) -> str:
+    """Replace newlines with spaces to prevent content injection in headers."""
+    return text.replace("\n", " ").replace("\r", "")
+
+
 def feed_colour(feed_url: str) -> discord.Colour:
     """Generate a consistent colour from a feed URL by hashing."""
     digest = hashlib.md5(feed_url.encode()).hexdigest()  # noqa: S324
@@ -98,16 +125,21 @@ def format_item_message(
     URLs are wrapped in <> to suppress Discord's auto link preview.
     If the item has an image, it's shown inline instead of the summary.
     """
-    # Sanitise untrusted feed content to prevent mention injection and
-    # markdown escape attacks.
-    safe_name = sanitise_mentions(feed_name)
-    safe_title = sanitise_mentions(_sanitise_markdown(item.title))
+    # Sanitise untrusted feed content to prevent mention injection,
+    # markdown escape attacks, and content injection via newlines/URLs.
+    safe_name = _strip_newlines(sanitise_mentions(feed_name))
+    safe_title = _strip_newlines(sanitise_mentions(_sanitise_markdown(item.title)))
     safe_summary = sanitise_mentions(item.summary) if item.summary else ""
+    safe_link = _sanitise_url(item.link)
+    safe_image = _sanitise_url(item.image_url) if item.image_url else None
 
     # Header line: feed name · linked title · date
     # Wrap URL in <> to suppress Discord's automatic link preview
     parts = [f"**{safe_name}**"]
-    parts.append(f"[{safe_title}](<{item.link}>)")
+    if safe_link:
+        parts.append(f"[{safe_title}](<{safe_link}>)")
+    else:
+        parts.append(safe_title)
     date_str = _format_date(item.published)
     if date_str:
         parts.append(date_str)
@@ -119,8 +151,8 @@ def format_item_message(
     # minimal — i.e. the image IS the content.
     text_primary = bool(safe_summary and len(item.summary) > 100)
 
-    if item.image_url and not text_primary:
-        return f"{header}\n{item.image_url}"
+    if safe_image and not text_primary:
+        return f"{header}\n{safe_image}"
 
     if safe_summary:
         quoted = "\n".join(f"> {line}" for line in safe_summary.splitlines())

@@ -18,6 +18,10 @@ from cordfeeder.parser import FeedItem, parse_feed
 
 logger = logging.getLogger(__name__)
 
+# Maximum feed response size (5 MB). Prevents OOM from malicious endpoints
+# that serve gigabytes of data. Legitimate RSS/Atom feeds are typically <1 MB.
+MAX_FEED_BYTES = 5 * 1024 * 1024
+
 
 def calculate_adaptive_interval(
     timestamps: list[datetime],
@@ -197,7 +201,13 @@ class Poller:
                 if status != 200:
                     raise FeedHTTPError(feed_id=feed_id, url=url, status=status)
 
-                body = await resp.text()
+                raw = await resp.content.read(MAX_FEED_BYTES + 1)
+                if len(raw) > MAX_FEED_BYTES:
+                    raise ValueError(
+                        f"Feed response too large (>{MAX_FEED_BYTES // 1024 // 1024}MB)"
+                    )
+                encoding = resp.get_encoding() or "utf-8"
+                body = raw.decode(encoding, errors="replace")
                 items = parse_feed(body)
 
                 # Update conditional GET state

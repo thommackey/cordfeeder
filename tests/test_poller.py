@@ -119,6 +119,42 @@ class TestExceptions:
 # ---------------------------------------------------------------
 
 
+class TestResponseSizeLimit:
+    """Oversized HTTP responses must not be loaded into memory."""
+
+    @pytest.fixture
+    def poller(self):
+        config = _make_config()
+        db = AsyncMock()
+        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.update_feed_state = AsyncMock()
+        bot = MagicMock()
+        return Poller(config=config, db=db, bot=bot)
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_response(self, poller):
+        """A response larger than MAX_FEED_BYTES must raise, not OOM."""
+        from cordfeeder.poller import MAX_FEED_BYTES
+
+        # Mock a response whose content.read returns more bytes than the limit
+        mock_content = AsyncMock()
+        mock_content.read = AsyncMock(return_value=b"x" * (MAX_FEED_BYTES + 1))
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        mock_response.content = mock_content
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        poller._session = mock_session
+
+        with pytest.raises(ValueError, match="too large"):
+            await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
+
+
 class TestFetchFeed:
     @pytest.fixture
     def poller(self):
@@ -134,7 +170,13 @@ class TestFetchFeed:
         mock_response = AsyncMock()
         mock_response.status = status
         mock_response.headers = headers or {}
+        # Mock both resp.text() and resp.content.read() for size-limited reading
+        body_bytes = text_body.encode("utf-8") if isinstance(text_body, str) else text_body
         mock_response.text = AsyncMock(return_value=text_body)
+        mock_content = AsyncMock()
+        mock_content.read = AsyncMock(return_value=body_bytes)
+        mock_response.content = mock_content
+        mock_response.get_encoding = MagicMock(return_value="utf-8")
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
         return mock_response
