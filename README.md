@@ -378,23 +378,94 @@ Every log line includes `ts` (ISO 8601 UTC), `level`, `logger`, `msg`, `host`, `
 
 ## Deployment
 
-CordFeeder is a single long-running process. It needs:
+CordFeeder ships with Docker packaging and DigitalOcean infrastructure scripts. A single `deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
 
-- Outbound HTTPS to Discord's API and your feed URLs
-- A writable directory for the SQLite database
-- A persistent process manager (systemd, Docker, etc.)
+### Docker
 
-**Docker example:**
+The app runs in a single container. `docker-compose.yml` handles restart policy, log rotation, and SQLite volume persistence.
 
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY . .
-RUN pip install uv && uv sync --no-dev
-ENV DISCORD_BOT_TOKEN=
-ENV DATABASE_PATH=/data/cordfeeder.db
-VOLUME /data
-CMD ["uv", "run", "cordfeeder"]
+```bash
+docker compose build --quiet && echo 'Build succeeded' && docker compose config --services
+```
+
+```output
+Build succeeded
+cordfeeder
+```
+
+```bash
+cat docker-compose.yml
+```
+
+```output
+services:
+  cordfeeder:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_PATH: /data/cordfeeder.db
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+### DigitalOcean deployment
+
+Prerequisites: [doctl](https://docs.digitalocean.com/reference/doctl/) CLI and an SSH key at `~/.ssh/id_rsa.pub`.
+
+```bash
+brew install doctl
+doctl auth init    # paste your DO API token
+```
+
+**Provision a droplet** (one-time):
+
+```bash
+./infra/setup.sh
+```
+
+This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs Docker, clones the repo, and sets up an SSH-only firewall. Override defaults with `DROPLET_NAME`, `DROPLET_REGION`, or `DROPLET_SIZE` env vars.
+
+**Copy your secrets and deploy:**
+
+```bash
+scp .env root@<DROPLET_IP>:~/cordfeeder/.env
+DROPLET_IP=<DROPLET_IP> ./deploy.sh
+```
+
+`deploy.sh` SSHes in, pulls the latest code, rebuilds the container, and tails the logs to confirm startup. On subsequent deploys, just run `deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
+
+**Tear down** when you are done:
+
+```bash
+./infra/teardown.sh
+```
+
+See [infra/README.md](infra/README.md) for full configuration reference.
+
+### Monitoring
+
+Tail live logs from the droplet:
+
+```bash
+ssh root@<DROPLET_IP> "cd cordfeeder && docker compose logs -f"
+```
+
+Filter for errors:
+
+```bash
+ssh root@<DROPLET_IP> "cd cordfeeder && docker compose logs --no-log-prefix" | jq 'select(.level == "ERROR")'
+```
+
+Check container health:
+
+```bash
+ssh root@<DROPLET_IP> "cd cordfeeder && docker compose ps"
 ```
 
 SIGTERM triggers graceful shutdown: the bot closes the Discord WebSocket, the poller drains in-flight requests, and the database connection is cleanly closed before the process exits.
