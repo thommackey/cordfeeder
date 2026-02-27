@@ -67,10 +67,13 @@ def setup_logging(level: str) -> None:
 
 def main() -> None:
     """Entry point for CordFeeder."""
+    from dotenv import load_dotenv
+
     from cordfeeder.bot import CordFeederBot
     from cordfeeder.config import Config
     from cordfeeder.database import Database
 
+    load_dotenv()
     config = Config.from_env()
     setup_logging(config.log_level)
 
