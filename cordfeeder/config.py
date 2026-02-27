@@ -25,7 +25,30 @@ class Config:
         return cls(
             discord_token=token,
             feed_manager_role=os.environ.get("FEED_MANAGER_ROLE", "Feed Manager"),
-            default_poll_interval=int(os.environ.get("DEFAULT_POLL_INTERVAL", "900")),
+            default_poll_interval=_int_env("DEFAULT_POLL_INTERVAL", 900),
             database_path=os.environ.get("DATABASE_PATH", "cordfeeder.db"),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
         )
+
+    def log_summary(self) -> dict:
+        """Return config values safe for logging (token redacted)."""
+        return {
+            "feed_manager_role": self.feed_manager_role,
+            "default_poll_interval": self.default_poll_interval,
+            "min_poll_interval": self.min_poll_interval,
+            "max_poll_interval": self.max_poll_interval,
+            "max_items_per_poll": self.max_items_per_poll,
+            "database_path": self.database_path,
+            "log_level": self.log_level,
+        }
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read an integer from an environment variable with a clear error."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got: {raw!r}") from None

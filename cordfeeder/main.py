@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 import socket
 import sys
 import traceback
@@ -78,20 +79,36 @@ def main() -> None:
     setup_logging(config.log_level)
 
     logger = logging.getLogger(__name__)
-    logger.info("starting cordfeeder")
+    logger.info("starting cordfeeder", extra=config.log_summary())
 
     db = Database(config.database_path)
 
     async def _run() -> None:
+        loop = asyncio.get_running_loop()
+        stop_event = asyncio.Event()
+
+        # Handle SIGTERM (Docker stop) for graceful shutdown
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop_event.set)
+
         await db.initialise()
         bot = CordFeederBot(config=config, db=db)
         async with bot:
-            await bot.start(config.discord_token)
+            bot_task = asyncio.create_task(bot.start(config.discord_token))
+            await stop_event.wait()
+            logger.info("shutdown signal received")
+            bot_task.cancel()
+            try:
+                await bot_task
+            except asyncio.CancelledError:
+                pass
 
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
-        logger.info("shutting down (keyboard interrupt)")
+        pass
+    finally:
+        logger.info("cordfeeder stopped")
 
 
 if __name__ == "__main__":
