@@ -149,7 +149,7 @@ class TestResponseSizeLimit:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(ValueError, match="too large"):
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
@@ -189,7 +189,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         items = await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
 
@@ -205,7 +205,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         result = await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
         assert result is None
@@ -216,7 +216,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(FeedGoneError):
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
@@ -227,7 +227,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(FeedRateLimitError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
@@ -242,7 +242,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(FeedRateLimitError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
@@ -255,7 +255,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(FeedServerError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
@@ -268,7 +268,7 @@ class TestFetchFeed:
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
-        poller._session = mock_session
+        poller.session = mock_session
 
         with pytest.raises(FeedHTTPError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")

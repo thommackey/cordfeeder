@@ -103,14 +103,14 @@ class Poller:
         self.config = config
         self.db = db
         self.bot = bot
-        self._session: aiohttp.ClientSession | None = None
+        self.session: aiohttp.ClientSession | None = None
         self._host_semaphores: dict[str, asyncio.Semaphore] = {}
         self._running = False
         self._poll_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Create the HTTP session and start the background poll loop."""
-        self._session = aiohttp.ClientSession(
+        self.session = aiohttp.ClientSession(
             headers={"User-Agent": self.config.user_agent},
         )
         self._running = True
@@ -126,9 +126,9 @@ class Poller:
                 await self._poll_task
             except asyncio.CancelledError:
                 pass
-        if self._session:
-            await self._session.close()
-            self._session = None
+        if self.session:
+            await self.session.close()
+            self.session = None
         logger.info("poller stopped")
 
     async def _poll_loop(self) -> None:
@@ -175,7 +175,7 @@ class Poller:
         timeout = aiohttp.ClientTimeout(total=30)
 
         async with sem:
-            async with self._session.get(url, headers=headers, timeout=timeout) as resp:
+            async with self.session.get(url, headers=headers, timeout=timeout) as resp:
                 status = resp.status
 
                 if status == 304:

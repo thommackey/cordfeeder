@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
@@ -28,14 +27,6 @@ def _make_config(**overrides) -> Config:
     )
     defaults.update(overrides)
     return Config(**defaults)
-
-
-@pytest_asyncio.fixture
-async def db(tmp_path):
-    database = Database(str(tmp_path / "integration.db"))
-    await database.initialise()
-    yield database
-    await database.close()
 
 
 FEED_URL = "https://example.com/feed.xml"

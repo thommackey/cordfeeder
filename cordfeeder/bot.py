@@ -14,7 +14,7 @@ from cordfeeder.database import Database
 from cordfeeder.discovery import FeedNotFoundError, discover_feed_url
 from cordfeeder.formatter import sanitise_mentions, format_item_message
 from cordfeeder.parser import extract_feed_metadata, parse_feed
-from cordfeeder.poller import Poller
+from cordfeeder.poller import MAX_FEED_BYTES, Poller
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class FeedCog(commands.Cog):
         # It's a URL — discover the actual feed URL, then fetch and validate
         try:
             feed_url = await discover_feed_url(
-                url_or_id, self.bot.poller._session, _CMD_TIMEOUT
+                url_or_id, self.bot.poller.session, _CMD_TIMEOUT
             )
         except FeedNotFoundError:
             await interaction.followup.send(
@@ -101,10 +101,14 @@ class FeedCog(commands.Cog):
             return
 
         try:
-            async with self.bot.poller._session.get(
+            async with self.bot.poller.session.get(
                 feed_url, timeout=_CMD_TIMEOUT
             ) as resp:
-                body = await resp.text()
+                raw = await resp.content.read(MAX_FEED_BYTES + 1)
+                if len(raw) > MAX_FEED_BYTES:
+                    raise ValueError("Feed response too large")
+                encoding = resp.get_encoding() or "utf-8"
+                body = raw.decode(encoding, errors="replace")
 
             items = parse_feed(body)
             metadata = extract_feed_metadata(body)
@@ -274,7 +278,7 @@ class FeedCog(commands.Cog):
         if not feed_name_override:
             try:
                 feed_url = await discover_feed_url(
-                    feed_url, self.bot.poller._session, _CMD_TIMEOUT
+                    feed_url, self.bot.poller.session, _CMD_TIMEOUT
                 )
             except FeedNotFoundError:
                 await interaction.followup.send(
@@ -283,10 +287,14 @@ class FeedCog(commands.Cog):
                 return
 
         try:
-            async with self.bot.poller._session.get(
+            async with self.bot.poller.session.get(
                 feed_url, timeout=_CMD_TIMEOUT
             ) as resp:
-                body = await resp.text()
+                raw = await resp.content.read(MAX_FEED_BYTES + 1)
+                if len(raw) > MAX_FEED_BYTES:
+                    raise ValueError("Feed response too large")
+                encoding = resp.get_encoding() or "utf-8"
+                body = raw.decode(encoding, errors="replace")
 
             items = parse_feed(body)
             metadata = extract_feed_metadata(body)
