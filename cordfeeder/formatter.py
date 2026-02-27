@@ -81,11 +81,15 @@ def format_item_message(
         parts.append(date_str)
     header = " · ".join(parts)
 
-    # If there's an image, show it inline (Discord renders image URLs as images)
-    if item.image_url:
+    # Decide between image-primary (webcomics) and text-primary (newsletters).
+    # If the summary has substantial text, treat images as decorative thumbnails
+    # and show the text instead.  Only show images inline when the summary is
+    # minimal — i.e. the image IS the content.
+    text_primary = bool(item.summary and len(item.summary) > 100)
+
+    if item.image_url and not text_primary:
         return f"{header}\n{item.image_url}"
 
-    # Otherwise show summary as a blockquote
     if item.summary:
         quoted = "\n".join(f"> {line}" for line in item.summary.splitlines())
         return f"{header}\n{quoted}"

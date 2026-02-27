@@ -60,6 +60,25 @@ def test_message_with_image_shows_inline():
     assert "Click here" not in msg
 
 
+def test_message_text_primary_skips_image():
+    """Text-primary feeds (newsletters) should show summary, not the thumbnail."""
+    long_summary = "This week saw major developments in AI policy. " * 5  # >100 chars
+    item = FeedItem(
+        title="Import AI #350",
+        link="https://jack-clark.net/350",
+        guid="350",
+        summary=long_summary.strip(),
+        author="Jack Clark",
+        published=None,
+        image_url="https://jack-clark.net/wp-content/uploads/thumb.jpg",
+    )
+    msg = format_item_message(item, feed_name="Import AI", feed_id=7)
+    # Should show the text summary, not the image
+    assert "AI policy" in msg
+    assert "thumb.jpg" not in msg
+    assert msg.startswith("**Import AI**")
+
+
 def test_message_with_date():
     item = FeedItem(
         title="Dated",
