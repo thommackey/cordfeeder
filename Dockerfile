@@ -19,4 +19,4 @@ RUN uv sync --frozen --no-dev
 
 USER app
 
-CMD ["uv", "run", "python", "-m", "cordfeeder"]
+CMD ["/app/.venv/bin/python", "-m", "cordfeeder"]
