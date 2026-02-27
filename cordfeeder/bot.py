@@ -94,7 +94,13 @@ class FeedCog(commands.Cog):
                 feed_id=feed_id,
                 feed_icon_url=metadata.image_url,
             )
-            await target_channel.send(embed=embed)
+            msg = await target_channel.send(embed=embed)
+            await self.bot.db.record_posted_item(feed_id, item.guid, message_id=msg.id)
+
+        # Mark all parsed items as posted so the poller only picks up
+        # truly new items going forward.
+        for item in items:
+            await self.bot.db.record_posted_item(feed_id, item.guid)
 
         await interaction.followup.send(
             f"Subscribed to **{feed_name}** (ID `{feed_id}`) in {target_channel.mention}.",
