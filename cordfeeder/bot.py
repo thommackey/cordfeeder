@@ -136,6 +136,11 @@ class FeedCog(commands.Cog):
             added_by=interaction.user.id,
         )
 
+        # Mark all parsed items as posted FIRST so the poller only picks up
+        # truly new items going forward — even if initial posting below fails.
+        for item in items:
+            await self.bot.db.record_posted_item(feed_id, item.guid)
+
         # Post initial items (most recent N, oldest-first)
         count = self.bot.config.initial_items_count
         initial = items[:count] if items else []
@@ -145,13 +150,14 @@ class FeedCog(commands.Cog):
                 feed_name=feed_name,
                 feed_id=feed_id,
             )
-            msg = await target_channel.send(content)
-            await self.bot.db.record_posted_item(feed_id, item.guid, message_id=msg.id)
-
-        # Mark all parsed items as posted so the poller only picks up
-        # truly new items going forward.
-        for item in items:
-            await self.bot.db.record_posted_item(feed_id, item.guid)
+            try:
+                await target_channel.send(content)
+            except Exception:
+                logger.warning(
+                    "failed to post initial item",
+                    extra={"feed_id": feed_id, "guid": item.guid},
+                )
+                break
 
         await interaction.followup.send(
             f"Subscribed to **{feed_name}** (ID `{feed_id}`) in {target_channel.mention}.",

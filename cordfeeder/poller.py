@@ -77,6 +77,16 @@ class FeedServerError(Exception):
         super().__init__(f"Feed {feed_id} ({url}) server error {status}")
 
 
+class FeedHTTPError(Exception):
+    """Raised when a feed returns an unexpected non-2xx status."""
+
+    def __init__(self, feed_id: int, url: str, status: int) -> None:
+        self.feed_id = feed_id
+        self.url = url
+        self.status = int(status)
+        super().__init__(f"Feed {feed_id} ({url}) HTTP {status}")
+
+
 # ------------------------------------------------------------------
 # Poller
 # ------------------------------------------------------------------
@@ -183,6 +193,9 @@ class Poller:
 
                 if 500 <= status < 600:
                     raise FeedServerError(feed_id=feed_id, url=url, status=status)
+
+                if status != 200:
+                    raise FeedHTTPError(feed_id=feed_id, url=url, status=status)
 
                 body = await resp.text()
                 items = parse_feed(body)
@@ -305,13 +318,18 @@ class Poller:
         channel_id: int,
         item: FeedItem,
     ) -> None:
-        """Send a feed item embed to the appropriate Discord channel."""
+        """Send a feed item to the appropriate Discord channel.
+
+        Always records the item as posted — even if sending fails — to prevent
+        infinite retry loops when the channel is inaccessible.
+        """
         channel = self.bot.get_channel(channel_id)
         if not channel:
             logger.warning(
                 "channel not found",
                 extra={"feed_id": feed_id, "channel_id": channel_id},
             )
+            await self.db.record_posted_item(feed_id, item.guid)
             return
 
         content = format_item_message(
@@ -319,10 +337,17 @@ class Poller:
             feed_name=feed_name,
             feed_id=feed_id,
         )
-        msg = await channel.send(content)
-        message_id = msg.id if hasattr(msg, "id") else None
-        await self.db.record_posted_item(feed_id, item.guid, message_id)
+        message_id = None
+        try:
+            msg = await channel.send(content)
+            message_id = msg.id if hasattr(msg, "id") else None
+        except Exception:
+            logger.warning(
+                "failed to send item to channel",
+                extra={"feed_id": feed_id, "guid": item.guid, "channel_id": channel_id},
+            )
 
+        await self.db.record_posted_item(feed_id, item.guid, message_id)
         logger.debug(
             "item posted",
             extra={"feed_id": feed_id, "guid": item.guid},

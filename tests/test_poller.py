@@ -9,6 +9,7 @@ import pytest
 from cordfeeder.config import Config
 from cordfeeder.poller import (
     FeedGoneError,
+    FeedHTTPError,
     FeedRateLimitError,
     FeedServerError,
     Poller,
@@ -105,6 +106,12 @@ class TestExceptions:
             feed_id=1, url="https://example.com/feed", status=503
         )
         assert err.status == 503
+
+    def test_feed_http_error(self):
+        err = FeedHTTPError(
+            feed_id=1, url="https://example.com/feed", status=404
+        )
+        assert err.status == 404
 
 
 # ---------------------------------------------------------------
@@ -211,3 +218,16 @@ class TestFetchFeed:
         with pytest.raises(FeedServerError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
         assert exc_info.value.status == 503
+
+    @pytest.mark.asyncio
+    async def test_raises_http_error_on_404(self, poller):
+        """A 404 should raise FeedHTTPError, not try to parse HTML error page."""
+        mock_response = self._mock_response(404, text_body="<html>Not Found</html>")
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        poller._session = mock_session
+
+        with pytest.raises(FeedHTTPError) as exc_info:
+            await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
+        assert exc_info.value.status == 404
