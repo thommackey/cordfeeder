@@ -13,7 +13,7 @@ from dateutil import parser as dateutil_parser
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
-from cordfeeder.formatter import format_item_message
+from cordfeeder.formatter import sanitise_mentions, format_item_message
 from cordfeeder.parser import FeedItem, parse_feed
 
 logger = logging.getLogger(__name__)
@@ -245,7 +245,7 @@ class Poller:
 
             # Post items oldest-first
             for item in new_items:
-                await self._post_item(feed_id, feed_name, feed_url, channel_id, item)
+                await self._post_item(feed_id, feed_name, channel_id, item)
 
             # Adaptive interval
             timestamps = self._extract_timestamps(items)
@@ -275,8 +275,9 @@ class Poller:
             try:
                 channel = self.bot.get_channel(channel_id)
                 if channel:
+                    safe_name = sanitise_mentions(feed_name)
                     await channel.send(
-                        f"Feed **{feed_name}** (`{feed_url}`) returned HTTP 410 Gone. "
+                        f"Feed **{safe_name}** (`{feed_url}`) returned HTTP 410 Gone. "
                         f"Removing it automatically."
                     )
             except Exception:
@@ -314,7 +315,6 @@ class Poller:
         self,
         feed_id: int,
         feed_name: str,
-        feed_url: str,
         channel_id: int,
         item: FeedItem,
     ) -> None:

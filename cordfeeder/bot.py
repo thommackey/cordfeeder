@@ -12,7 +12,7 @@ from discord.ext import commands
 from cordfeeder.config import Config
 from cordfeeder.database import Database
 from cordfeeder.discovery import FeedNotFoundError, discover_feed_url
-from cordfeeder.formatter import format_item_embed, format_item_message
+from cordfeeder.formatter import format_item_message
 from cordfeeder.parser import extract_feed_metadata, parse_feed
 from cordfeeder.poller import Poller
 
@@ -308,7 +308,7 @@ class FeedCog(commands.Cog):
         if item.image_url:
             embed.set_thumbnail(url=item.image_url)
 
-        footer = "Preview · not subscribed" if url_or_id == feed_url else "Preview"
+        footer = "Preview" if feed_name_override else "Preview · not subscribed"
         embed.set_footer(text=footer)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -350,7 +350,11 @@ class CordFeederBot(commands.Bot):
         # message_content not needed — we only use slash commands
         intents.message_content = False
 
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
 
         self.config = config
         self.db = db

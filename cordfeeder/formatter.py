@@ -27,7 +27,7 @@ _MD_SPECIAL = str.maketrans({
 })
 
 
-def _sanitise_mentions(text: str) -> str:
+def sanitise_mentions(text: str) -> str:
     """Neutralise Discord mentions so feed content can't ping users."""
     return _MENTION_RE.sub(lambda m: m.group(0).replace("@", "@\u200b"), text)
 
@@ -100,9 +100,9 @@ def format_item_message(
     """
     # Sanitise untrusted feed content to prevent mention injection and
     # markdown escape attacks.
-    safe_name = _sanitise_mentions(feed_name)
-    safe_title = _sanitise_mentions(_sanitise_markdown(item.title))
-    safe_summary = _sanitise_mentions(item.summary) if item.summary else ""
+    safe_name = sanitise_mentions(feed_name)
+    safe_title = sanitise_mentions(_sanitise_markdown(item.title))
+    safe_summary = sanitise_mentions(item.summary) if item.summary else ""
 
     # Header line: feed name · linked title · date
     # Wrap URL in <> to suppress Discord's automatic link preview
