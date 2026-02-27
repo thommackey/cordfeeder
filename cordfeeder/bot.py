@@ -75,13 +75,20 @@ class FeedCog(commands.Cog):
             return
 
         feed_name = metadata.title or url
-        feed_id = await self.bot.db.add_feed(
-            url=url,
-            name=feed_name,
-            channel_id=target_channel.id,
-            guild_id=interaction.guild_id,
-            added_by=interaction.user.id,
-        )
+        try:
+            feed_id = await self.bot.db.add_feed(
+                url=url,
+                name=feed_name,
+                channel_id=target_channel.id,
+                guild_id=interaction.guild_id,
+                added_by=interaction.user.id,
+            )
+        except Exception:
+            await interaction.followup.send(
+                f"That feed is already subscribed on this server. Use `/feed list` to see existing feeds.",
+                ephemeral=True,
+            )
+            return
 
         # Post initial items (most recent N, oldest-first)
         count = self.bot.config.initial_items_count
