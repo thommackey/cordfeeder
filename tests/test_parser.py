@@ -77,6 +77,17 @@ class TestParseRSSFeed:
             parse_feed("this is not xml at all")
 
 
+    def test_extract_image_from_description_html(self):
+        xml = """<?xml version="1.0"?>
+        <rss version="2.0"><channel><title>T</title>
+        <item><title>Comic</title><link>https://x.com/1</link>
+        <guid>1</guid>
+        <description>&lt;img src="https://x.com/comic.png" /&gt;&lt;br /&gt;Bonus panel</description>
+        </item></channel></rss>"""
+        items = parse_feed(xml)
+        assert items[0].image_url == "https://x.com/comic.png"
+
+
 class TestExtractFeedMetadata:
     def test_extract_feed_metadata(self):
         meta = extract_feed_metadata(_read("sample_rss.xml"))

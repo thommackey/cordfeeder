@@ -50,8 +50,11 @@ def _truncate(text: str, max_len: int = 300) -> str:
     return truncated + "..."
 
 
+_IMG_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
+
+
 def _extract_image(entry: dict) -> str | None:
-    """Extract image URL from media_content, media_thumbnail, or enclosures."""
+    """Extract image URL from media tags, enclosures, or description HTML."""
     # media_content
     for media in getattr(entry, "media_content", None) or []:
         url = media.get("url", "")
@@ -71,6 +74,19 @@ def _extract_image(entry: dict) -> str | None:
         enc_type = enc.get("type", "")
         if enc_type.startswith("image/"):
             return enc.get("url")
+
+    # Fallback: <img> tags in description/summary HTML
+    for field in ("summary", "description", "content"):
+        raw = ""
+        val = entry.get(field)
+        if isinstance(val, list):
+            raw = val[0].get("value", "") if val else ""
+        elif isinstance(val, str):
+            raw = val
+        if raw:
+            match = _IMG_RE.search(raw)
+            if match:
+                return match.group(1)
 
     return None
 

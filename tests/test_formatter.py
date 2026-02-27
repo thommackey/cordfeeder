@@ -24,7 +24,7 @@ def test_message_basic():
     )
     msg = format_item_message(item, feed_name="Test Feed", feed_id=3)
     assert "**Test Feed**" in msg
-    assert "[Test Article](https://example.com/1)" in msg
+    assert "[Test Article](<https://example.com/1>)" in msg
     assert "> A summary of the article." in msg
 
 
@@ -40,7 +40,24 @@ def test_message_no_summary():
     )
     msg = format_item_message(item, feed_name="Feed", feed_id=1)
     assert "[Title Only]" in msg
-    assert ">" not in msg  # no blockquote when no summary
+    assert "\n>" not in msg  # no blockquote when no summary
+
+
+def test_message_with_image_shows_inline():
+    item = FeedItem(
+        title="Comic Strip",
+        link="https://example.com/comic/1",
+        guid="1",
+        summary="Click here to see more.",
+        author=None,
+        published=None,
+        image_url="https://example.com/comics/strip.png",
+    )
+    msg = format_item_message(item, feed_name="SMBC", feed_id=2)
+    # Image URL should be on its own line (Discord renders it inline)
+    assert "https://example.com/comics/strip.png" in msg
+    # Summary should NOT appear when there's an image
+    assert "Click here" not in msg
 
 
 def test_message_with_date():

@@ -66,18 +66,26 @@ def format_item_message(
     """Format a feed item as a plain Discord message.
 
     Produces a compact, non-intrusive format:
-        **Feed Name** · [Article Title](url) · 2h ago
+        **Feed Name** · [Article Title](<url>) · 2h ago
         > Summary text truncated at word boundary...
+
+    URLs are wrapped in <> to suppress Discord's auto link preview.
+    If the item has an image, it's shown inline instead of the summary.
     """
     # Header line: feed name · linked title · date
+    # Wrap URL in <> to suppress Discord's automatic link preview
     parts = [f"**{feed_name}**"]
-    parts.append(f"[{item.title}]({item.link})")
+    parts.append(f"[{item.title}](<{item.link}>)")
     date_str = _format_date(item.published)
     if date_str:
         parts.append(date_str)
     header = " · ".join(parts)
 
-    # Summary as a blockquote
+    # If there's an image, show it inline (Discord renders image URLs as images)
+    if item.image_url:
+        return f"{header}\n{item.image_url}"
+
+    # Otherwise show summary as a blockquote
     if item.summary:
         quoted = "\n".join(f"> {line}" for line in item.summary.splitlines())
         return f"{header}\n{quoted}"
