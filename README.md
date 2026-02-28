@@ -209,6 +209,8 @@ The poll loop runs every 30 seconds and checks for feeds where `next_poll_at <= 
 
 After each successful fetch, CordFeeder calculates the average gap between item publish dates and sets the next poll interval to half that value, clamped between 5 minutes and 12 hours. This means a feed that publishes twice a day gets checked every ~6 hours; a feed that publishes every 10 minutes gets checked every ~5 minutes (the minimum).
 
+Newly added feeds use the default poll interval (15 minutes) for a warmup period of 3 poll cycles (~45 minutes) before the adaptive algorithm takes over. This prevents a feed with infrequent historical posts from immediately jumping to a multi-hour interval, ensuring new posts are detected promptly after subscribing.
+
 ```python
 
 import sys

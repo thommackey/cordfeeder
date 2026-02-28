@@ -1,13 +1,14 @@
 """Tests for the feed poller."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from cordfeeder.config import Config
 from cordfeeder.poller import (
+    ADAPTIVE_WARMUP_POLLS,
     FeedGoneError,
     FeedHTTPError,
     FeedRateLimitError,
@@ -273,3 +274,94 @@ class TestFetchFeed:
         with pytest.raises(FeedHTTPError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
         assert exc_info.value.status == 404
+
+
+# ---------------------------------------------------------------
+# Warmup polling
+# ---------------------------------------------------------------
+
+
+class TestWarmupPolling:
+    """Feed warmup period: new feeds use default interval before adaptive kicks in."""
+
+    @pytest.fixture
+    def poller(self):
+        config = _make_config()
+        db = AsyncMock()
+        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.update_feed_state = AsyncMock()
+        db.is_item_posted = AsyncMock(return_value=True)  # no new items to post
+        db.record_posted_item = AsyncMock()
+        bot = MagicMock()
+        p = Poller(config=config, db=db, bot=bot)
+        return p
+
+    def _mock_response(self, text_body):
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.headers = {}
+        body_bytes = text_body.encode("utf-8")
+        mock_content = AsyncMock()
+        mock_content.read = AsyncMock(return_value=body_bytes)
+        mock_response.content = mock_content
+        mock_response.get_encoding = MagicMock(return_value="utf-8")
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=False)
+        return mock_response
+
+    def _feed_info(self, created_at: datetime) -> dict:
+        return {
+            "id": 1,
+            "url": "https://example.com/feed.xml",
+            "name": "Test Feed",
+            "channel_id": 123,
+            "poll_interval": 900,
+            "consecutive_errors": 0,
+            "created_at": created_at.isoformat(),
+        }
+
+    @pytest.mark.asyncio
+    async def test_new_feed_uses_default_interval(self, poller):
+        """A feed created recently should use the default poll interval."""
+        now = datetime.now(timezone.utc)
+        created_at = now - timedelta(minutes=5)  # 5 min old, well within warmup
+        feed_info = self._feed_info(created_at)
+
+        sample_xml = _read("sample_rss.xml")
+        mock_response = self._mock_response(sample_xml)
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        poller.session = mock_session
+
+        await poller._poll_feed(feed_info)
+
+        # Check that update_feed_state was called with the default interval (900)
+        schedule_calls = [
+            c for c in poller.db.update_feed_state.call_args_list
+            if "poll_interval" in (c.kwargs or {})
+        ]
+        assert len(schedule_calls) >= 1
+        assert schedule_calls[-1].kwargs["poll_interval"] == 900
+
+    @pytest.mark.asyncio
+    async def test_old_feed_uses_adaptive_interval(self, poller):
+        """A feed created long ago should use the adaptive interval."""
+        created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)  # over a year old
+        feed_info = self._feed_info(created_at)
+
+        sample_xml = _read("sample_rss.xml")
+        mock_response = self._mock_response(sample_xml)
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_response)
+        poller.session = mock_session
+
+        await poller._poll_feed(feed_info)
+
+        # Check that the interval is NOT the default — it should be adaptive
+        schedule_calls = [
+            c for c in poller.db.update_feed_state.call_args_list
+            if "poll_interval" in (c.kwargs or {})
+        ]
+        assert len(schedule_calls) >= 1
+        used_interval = schedule_calls[-1].kwargs["poll_interval"]
+        assert used_interval != poller.config.default_poll_interval

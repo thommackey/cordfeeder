@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 # that serve gigabytes of data. Legitimate RSS/Atom feeds are typically <1 MB.
 MAX_FEED_BYTES = 5 * 1024 * 1024
 
+# Number of default-interval polls before adaptive kicks in.
+# Prevents newly added feeds from immediately jumping to long adaptive intervals
+# based on historical publish timestamps.
+ADAPTIVE_WARMUP_POLLS = 3
+
 
 def calculate_adaptive_interval(
     timestamps: list[datetime],
@@ -267,6 +272,23 @@ class Poller:
             interval = adaptive or feed_info.get(
                 "poll_interval", self.config.default_poll_interval
             )
+
+            # Use default interval during warmup period after subscription
+            created_at = dateutil_parser.parse(feed_info["created_at"])
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            warmup_seconds = ADAPTIVE_WARMUP_POLLS * self.config.default_poll_interval
+            age = (datetime.now(timezone.utc) - created_at).total_seconds()
+            if age < warmup_seconds:
+                interval = self.config.default_poll_interval
+                logger.info(
+                    "using warmup interval",
+                    extra={
+                        "feed_id": feed_id,
+                        "warmup_remaining": int(warmup_seconds - age),
+                        "adaptive_would_be": adaptive,
+                    },
+                )
 
             await self._schedule_next_poll(feed_id, interval)
             await self.db.update_feed_state(feed_id, consecutive_errors=0)
