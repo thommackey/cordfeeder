@@ -30,12 +30,38 @@ class FeedMetadata:
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_LINK_RE = re.compile(r"<a\b[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+_MULTI_SPACE_RE = re.compile(r" {2,}")
+
+
+def _process_links(html_text: str) -> str:
+    """Replace <a> tags: keep descriptive text, strip URL-only links.
+
+    Mastodon (and similar) wraps shared URLs in <a> tags where the visible
+    text is the URL itself.  Stripping tags naively leaves bare URLs that
+    trigger Discord preview chips.  This removes those while preserving
+    descriptive anchor text (e.g. @mentions, article titles).
+    """
+    def _replace_link(match: re.Match) -> str:
+        inner = _TAG_RE.sub("", match.group(1)).strip()
+        inner = html.unescape(inner)
+        if inner.startswith(("http://", "https://", "www.")):
+            return ""
+        return inner
+
+    return _LINK_RE.sub(_replace_link, html_text)
 
 
 def _strip_html(text: str) -> str:
-    """Remove HTML tags and decode entities."""
+    """Remove HTML tags and decode entities.
+
+    Processes <a> tags first to intelligently handle URL-only links,
+    then strips remaining tags and collapses whitespace.
+    """
+    text = _process_links(text)
     stripped = _TAG_RE.sub("", text)
-    return html.unescape(stripped).strip()
+    cleaned = _MULTI_SPACE_RE.sub(" ", html.unescape(stripped))
+    return cleaned.strip()
 
 
 def _truncate(text: str, max_len: int = 300) -> str:
@@ -197,9 +223,12 @@ def parse_feed(raw: str) -> list[FeedItem]:
     # Second pass: truncate and build FeedItems.
     items: list[FeedItem] = []
     for (entry, _), summary in zip(entries_data, cleaned_summaries):
+        title = entry.get("title", "")
+        if not title and summary:
+            title = _truncate(summary, max_len=80)
         items.append(
             FeedItem(
-                title=entry.get("title", ""),
+                title=title,
                 link=entry.get("link", ""),
                 guid=entry.get("id", "") or entry.get("link", ""),
                 summary=_truncate(summary),

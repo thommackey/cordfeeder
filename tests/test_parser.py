@@ -4,7 +4,7 @@ import pytest
 
 from cordfeeder.parser import (
     FeedItem, FeedMetadata, parse_feed, extract_feed_metadata,
-    _strip_boilerplate,
+    _strip_boilerplate, _strip_html,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -160,6 +160,86 @@ class TestStripBoilerplate:
         assert not items[0].summary.startswith("Welcome")
         assert "AI advances" in items[0].summary
         assert "quantum computing" in items[1].summary
+
+
+class TestLinkProcessing:
+    """HTML-to-text handling of <a> tags (Mastodon URL stripping)."""
+
+    def test_strips_url_only_links(self):
+        """Mastodon-style <a> where visible text is the URL itself."""
+        html = (
+            '<p>Check this out '
+            '<a href="https://example.com/article">'
+            '<span class="invisible">https://</span>'
+            '<span class="ellipsis">example.com/article</span>'
+            '</a></p>'
+        )
+        assert _strip_html(html) == "Check this out"
+
+    def test_keeps_descriptive_link_text(self):
+        """<a> with human-readable anchor text should keep the text."""
+        html = '<p>Listen to <a href="https://example.com">@incomparable</a> discuss it.</p>'
+        assert _strip_html(html) == "Listen to @incomparable discuss it."
+
+    def test_strips_plain_url_link(self):
+        """Simple <a> whose text is a bare URL."""
+        html = '<p>See <a href="https://example.com">https://example.com</a> for details.</p>'
+        assert _strip_html(html) == "See for details."
+
+    def test_collapses_whitespace_after_url_removal(self):
+        """Removing a URL-only link shouldn't leave double spaces."""
+        html = '<p>Before <a href="https://x.com">https://x.com</a> after</p>'
+        result = _strip_html(html)
+        assert "  " not in result
+
+
+class TestTitleSynthesis:
+    """Title-less items (e.g. Mastodon) get title from summary."""
+
+    def test_title_synthesised_from_summary(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel><title>Mastodon Feed</title>
+            <item>
+              <link>https://mastodon.social/@user/123</link>
+              <guid>https://mastodon.social/@user/123</guid>
+              <description>Does Apple still not have any official accounts on Mastodon or Bluesky?</description>
+            </item>
+          </channel>
+        </rss>"""
+        items = parse_feed(xml)
+        assert items[0].title == "Does Apple still not have any official accounts on Mastodon or Bluesky?"
+
+    def test_long_summary_title_truncated(self):
+        long_text = "A " * 60  # 120 chars
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel><title>Feed</title>
+            <item>
+              <link>https://example.com/1</link>
+              <guid>1</guid>
+              <description>{long_text}</description>
+            </item>
+          </channel>
+        </rss>"""
+        items = parse_feed(xml)
+        assert len(items[0].title) <= 83  # 80 + "..."
+        assert items[0].title.endswith("...")
+
+    def test_normal_title_preserved(self):
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel><title>Blog</title>
+            <item>
+              <title>My Article Title</title>
+              <link>https://example.com/1</link>
+              <guid>1</guid>
+              <description>The article content.</description>
+            </item>
+          </channel>
+        </rss>"""
+        items = parse_feed(xml)
+        assert items[0].title == "My Article Title"
 
 
 class TestExtractFeedMetadata:
