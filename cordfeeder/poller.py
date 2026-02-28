@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import aiohttp
@@ -13,8 +14,11 @@ from dateutil import parser as dateutil_parser
 
 from cordfeeder.config import Config
 from cordfeeder.database import Database
-from cordfeeder.formatter import sanitise_mentions, format_item_message
+from cordfeeder.formatter import format_item_message, sanitise_mentions
 from cordfeeder.parser import FeedItem, parse_feed
+
+if TYPE_CHECKING:
+    from cordfeeder.bot import CordFeederBot
 
 logger = logging.getLogger(__name__)
 
@@ -104,14 +108,21 @@ class FeedHTTPError(Exception):
 class Poller:
     """Background feed poller that fetches RSS/Atom feeds and posts new items."""
 
-    def __init__(self, config: Config, db: Database, bot) -> None:
+    def __init__(self, config: Config, db: Database, bot: CordFeederBot) -> None:
         self.config = config
         self.db = db
         self.bot = bot
         self.session: aiohttp.ClientSession | None = None
         self._host_semaphores: dict[str, asyncio.Semaphore] = {}
         self._running = False
-        self._poll_task: asyncio.Task | None = None
+        self._poll_task: asyncio.Task[None] | None = None
+
+    @property
+    def _http(self) -> aiohttp.ClientSession:
+        """Return the active HTTP session, raising if not started."""
+        if self.session is None:
+            raise RuntimeError("Poller not started; call start() first")
+        return self.session
 
     async def start(self) -> None:
         """Create the HTTP session and start the background poll loop."""
@@ -138,7 +149,7 @@ class Poller:
 
     async def _poll_loop(self) -> None:
         """Main loop: poll due feeds, then sleep.  Prunes old posted_items daily."""
-        last_prune = datetime.min.replace(tzinfo=timezone.utc)
+        last_prune = datetime.min.replace(tzinfo=UTC)
         while self._running:
             try:
                 due_feeds = await self.db.get_due_feeds()
@@ -148,7 +159,7 @@ class Poller:
                     await asyncio.gather(*tasks, return_exceptions=True)
 
                 # Prune stale posted_items once per day
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 if (now - last_prune).total_seconds() >= 86400:
                     await self.db.prune_old_items()
                     last_prune = now
@@ -180,7 +191,7 @@ class Poller:
         timeout = aiohttp.ClientTimeout(total=30)
 
         async with sem:
-            async with self.session.get(url, headers=headers, timeout=timeout) as resp:
+            async with self._http.get(url, headers=headers, timeout=timeout) as resp:
                 status = resp.status
 
                 if status == 304:
@@ -242,7 +253,9 @@ class Poller:
 
             if items is None:
                 # Not modified — schedule next poll with current interval
-                interval = feed_info.get("poll_interval", self.config.default_poll_interval)
+                interval = feed_info.get(
+                    "poll_interval", self.config.default_poll_interval
+                )
                 await self._schedule_next_poll(feed_id, interval)
                 await self.db.update_feed_state(feed_id, consecutive_errors=0)
                 return
@@ -276,9 +289,9 @@ class Poller:
             # Use default interval during warmup period after subscription
             created_at = dateutil_parser.parse(feed_info["created_at"])
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=UTC)
             warmup_seconds = ADAPTIVE_WARMUP_POLLS * self.config.default_poll_interval
-            age = (datetime.now(timezone.utc) - created_at).total_seconds()
+            age = (datetime.now(UTC) - created_at).total_seconds()
             if age < warmup_seconds:
                 interval = self.config.default_poll_interval
                 logger.info(
@@ -306,11 +319,11 @@ class Poller:
             logger.warning("feed gone", extra={"feed_id": feed_id, "url": feed_url})
             try:
                 channel = self.bot.get_channel(channel_id)
-                if channel:
+                if channel and hasattr(channel, "send"):
                     safe_name = sanitise_mentions(feed_name)
-                    await channel.send(
-                        f"Feed **{safe_name}** (`{feed_url}`) returned HTTP 410 Gone. "
-                        f"Removing it automatically."
+                    await channel.send(  # type: ignore[union-attr]
+                        f"Feed **{safe_name}** (`{feed_url}`) "
+                        f"returned HTTP 410 Gone. Removing it automatically."
                     )
             except Exception:
                 logger.exception("failed to notify channel about gone feed")
@@ -330,7 +343,7 @@ class Poller:
             base_interval = feed_info.get(
                 "poll_interval", self.config.default_poll_interval
             )
-            backoff = min(base_interval * (2 ** errors), 86400)
+            backoff = min(base_interval * (2**errors), 86400)
             jitter = random.uniform(0, backoff * 0.1)
             backoff = int(backoff + jitter)
 
@@ -356,7 +369,7 @@ class Poller:
         infinite retry loops when the channel is inaccessible.
         """
         channel = self.bot.get_channel(channel_id)
-        if not channel:
+        if not channel or not hasattr(channel, "send"):
             logger.warning(
                 "channel not found",
                 extra={"feed_id": feed_id, "channel_id": channel_id},
@@ -371,7 +384,7 @@ class Poller:
         )
         message_id = None
         try:
-            msg = await channel.send(content)
+            msg = await channel.send(content)  # type: ignore[union-attr]
             message_id = msg.id if hasattr(msg, "id") else None
         except Exception:
             logger.warning(
@@ -389,7 +402,7 @@ class Poller:
         """Schedule the next poll with 0-25% jitter added."""
         jitter = random.uniform(0, interval * 0.25)
         actual = int(interval + jitter)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         next_poll = now + timedelta(seconds=actual)
         await self.db.update_feed_state(
             feed_id,
@@ -408,7 +421,7 @@ class Poller:
             try:
                 dt = dateutil_parser.parse(item.published)
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                    dt = dt.replace(tzinfo=UTC)
                 timestamps.append(dt)
             except (ValueError, OverflowError):
                 continue

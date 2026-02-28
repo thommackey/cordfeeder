@@ -1,11 +1,9 @@
 """Tests for feed item formatting."""
 
 import discord
-import pytest
 
 from cordfeeder.formatter import feed_colour, format_item_embed, format_item_message
 from cordfeeder.parser import FeedItem
-
 
 # ---------------------------------------------------------------
 # Plain message format (primary format for feed items)

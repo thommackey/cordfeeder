@@ -9,7 +9,7 @@ import signal
 import socket
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class JSONFormatter(logging.Formatter):
@@ -19,7 +19,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).strftime(
                 "%Y-%m-%dT%H:%M:%S.%f"
             )[:-3]
             + "Z",
@@ -32,13 +32,34 @@ class JSONFormatter(logging.Formatter):
 
         # Merge extra fields (anything the caller passed via `extra={}`)
         for key, value in record.__dict__.items():
-            if key not in {
-                "name", "msg", "args", "created", "relativeCreated",
-                "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-                "pathname", "filename", "module", "levelname", "levelno",
-                "msecs", "thread", "threadName", "taskName",
-                "process", "processName", "message",
-            } and key not in payload:
+            if (
+                key
+                not in {
+                    "name",
+                    "msg",
+                    "args",
+                    "created",
+                    "relativeCreated",
+                    "exc_info",
+                    "exc_text",
+                    "stack_info",
+                    "lineno",
+                    "funcName",
+                    "pathname",
+                    "filename",
+                    "module",
+                    "levelname",
+                    "levelno",
+                    "msecs",
+                    "thread",
+                    "threadName",
+                    "taskName",
+                    "process",
+                    "processName",
+                    "message",
+                }
+                and key not in payload
+            ):
                 payload[key] = value
 
         if record.exc_info and record.exc_info[1] is not None:

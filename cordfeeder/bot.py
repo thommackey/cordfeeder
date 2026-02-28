@@ -12,7 +12,7 @@ from discord.ext import commands
 from cordfeeder.config import Config
 from cordfeeder.database import Database
 from cordfeeder.discovery import FeedNotFoundError, discover_feed_url
-from cordfeeder.formatter import sanitise_mentions, format_item_message
+from cordfeeder.formatter import format_item_message, sanitise_mentions
 from cordfeeder.parser import extract_feed_metadata, parse_feed
 from cordfeeder.poller import MAX_FEED_BYTES, Poller
 
@@ -26,9 +26,23 @@ def _safe_name(name: str) -> str:
     return sanitise_mentions(name).replace("\n", " ").replace("\r", "")
 
 
+def _guild_id(interaction: discord.Interaction) -> int:
+    """Extract guild_id from a guild-only interaction."""
+    assert interaction.guild_id is not None
+    return interaction.guild_id
+
+
+def _role_required_msg(role_name: str) -> str:
+    """Format the 'missing role' error message."""
+    return f"You need the **{role_name}** role to use this command."
+
+
 def has_feed_manager_role(interaction: discord.Interaction, role_name: str) -> bool:
     """Check whether the interacting user has the required role (case-sensitive)."""
-    return any(role.name == role_name for role in interaction.user.roles)
+    member = interaction.user
+    if not isinstance(member, discord.Member):
+        return False
+    return any(role.name == role_name for role in member.roles)
 
 
 class FeedCog(commands.Cog):
@@ -43,7 +57,10 @@ class FeedCog(commands.Cog):
     # /feed add <url> [channel]
     # ------------------------------------------------------------------
 
-    @feed_group.command(name="add", description="Subscribe to a feed (URL) or move an existing feed (ID) to this channel")
+    @feed_group.command(
+        name="add",
+        description="Subscribe to a feed (URL) or move an existing feed (ID)",
+    )
     @app_commands.describe(
         url_or_id="Feed URL to subscribe to, or feed ID to move",
         channel="Channel to post items in (defaults to current)",
@@ -56,20 +73,19 @@ class FeedCog(commands.Cog):
     ) -> None:
         if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
             await interaction.response.send_message(
-                "You need the **{}** role to use this command.".format(
-                    self.bot.config.feed_manager_role
-                ),
+                _role_required_msg(self.bot.config.feed_manager_role),
                 ephemeral=True,
             )
             return
 
         await interaction.response.defer(ephemeral=True)
-        target_channel = channel or interaction.channel
+        guild = _guild_id(interaction)
+        target_channel: discord.TextChannel = channel or interaction.channel  # type: ignore[assignment]
 
         # If it's a feed ID, just move the existing feed
         if url_or_id.isdigit():
             feed = await self.bot.db.get_feed(int(url_or_id))
-            if not feed or feed["guild_id"] != interaction.guild_id:
+            if not feed or feed["guild_id"] != guild:
                 await interaction.followup.send(
                     f"Feed `{url_or_id}` not found in this server.", ephemeral=True
                 )
@@ -77,23 +93,19 @@ class FeedCog(commands.Cog):
             old_channel_id = feed["channel_id"]
             await self.bot.db.update_feed_channel(feed["id"], target_channel.id)
             safe = _safe_name(feed["name"])
+            ch = target_channel.mention
+            fid = feed["id"]
             if old_channel_id == target_channel.id:
-                await interaction.followup.send(
-                    f"**{safe}** (ID `{feed['id']}`) is already in {target_channel.mention}.",
-                    ephemeral=True,
-                )
+                msg = f"**{safe}** (ID `{fid}`) is already in {ch}."
             else:
-                await interaction.followup.send(
-                    f"Moved **{safe}** (ID `{feed['id']}`) to {target_channel.mention}.",
-                    ephemeral=True,
-                )
+                msg = f"Moved **{safe}** (ID `{fid}`) to {ch}."
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # It's a URL — discover the actual feed URL, then fetch and validate
+        http = self.bot.poller._http
         try:
-            feed_url = await discover_feed_url(
-                url_or_id, self.bot.poller.session, _CMD_TIMEOUT
-            )
+            feed_url = await discover_feed_url(url_or_id, http, _CMD_TIMEOUT)
         except FeedNotFoundError:
             await interaction.followup.send(
                 "No RSS/Atom feed found at that URL.", ephemeral=True
@@ -101,9 +113,7 @@ class FeedCog(commands.Cog):
             return
 
         try:
-            async with self.bot.poller.session.get(
-                feed_url, timeout=_CMD_TIMEOUT
-            ) as resp:
+            async with http.get(feed_url, timeout=_CMD_TIMEOUT) as resp:
                 raw = await resp.content.read(MAX_FEED_BYTES + 1)
                 if len(raw) > MAX_FEED_BYTES:
                     raise ValueError("Feed response too large")
@@ -122,28 +132,24 @@ class FeedCog(commands.Cog):
         safe = _safe_name(feed_name)
 
         # Check if this feed already exists on this server
-        existing = await self.bot.db.get_feed_by_url(feed_url, interaction.guild_id)
+        existing = await self.bot.db.get_feed_by_url(feed_url, guild)
         if existing:
             feed_id = existing["id"]
             old_channel_id = existing["channel_id"]
             await self.bot.db.update_feed_channel(feed_id, target_channel.id)
+            ch = target_channel.mention
             if old_channel_id == target_channel.id:
-                await interaction.followup.send(
-                    f"**{safe}** (ID `{feed_id}`) is already in {target_channel.mention}.",
-                    ephemeral=True,
-                )
+                msg = f"**{safe}** (ID `{feed_id}`) is already in {ch}."
             else:
-                await interaction.followup.send(
-                    f"Moved **{safe}** (ID `{feed_id}`) to {target_channel.mention}.",
-                    ephemeral=True,
-                )
+                msg = f"Moved **{safe}** (ID `{feed_id}`) to {ch}."
+            await interaction.followup.send(msg, ephemeral=True)
             return
 
         feed_id = await self.bot.db.add_feed(
             url=feed_url,
             name=feed_name,
             channel_id=target_channel.id,
-            guild_id=interaction.guild_id,
+            guild_id=guild,
             added_by=interaction.user.id,
         )
 
@@ -176,7 +182,7 @@ class FeedCog(commands.Cog):
         )
         logger.info(
             "feed added via command",
-            extra={"feed_id": feed_id, "url": feed_url, "guild_id": interaction.guild_id},
+            extra={"feed_id": feed_id, "url": feed_url, "guild_id": guild},
         )
 
     # ------------------------------------------------------------------
@@ -192,15 +198,14 @@ class FeedCog(commands.Cog):
     ) -> None:
         if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
             await interaction.response.send_message(
-                "You need the **{}** role to use this command.".format(
-                    self.bot.config.feed_manager_role
-                ),
+                _role_required_msg(self.bot.config.feed_manager_role),
                 ephemeral=True,
             )
             return
 
+        guild = _guild_id(interaction)
         feed = await self.bot.db.get_feed(id)
-        if not feed or feed["guild_id"] != interaction.guild_id:
+        if not feed or feed["guild_id"] != guild:
             await interaction.response.send_message(
                 f"Feed `{id}` not found in this server.", ephemeral=True
             )
@@ -208,11 +213,12 @@ class FeedCog(commands.Cog):
 
         await self.bot.db.remove_feed(id)
         await interaction.response.send_message(
-            f"Removed feed **{_safe_name(feed['name'])}** (ID `{id}`).", ephemeral=True
+            f"Removed feed **{_safe_name(feed['name'])}** (ID `{id}`).",
+            ephemeral=True,
         )
         logger.info(
             "feed removed via command",
-            extra={"feed_id": id, "guild_id": interaction.guild_id},
+            extra={"feed_id": id, "guild_id": guild},
         )
 
     # ------------------------------------------------------------------
@@ -221,7 +227,7 @@ class FeedCog(commands.Cog):
 
     @feed_group.command(name="list", description="List all feeds for this server")
     async def feed_list(self, interaction: discord.Interaction) -> None:
-        feeds = await self.bot.db.list_feeds(interaction.guild_id)
+        feeds = await self.bot.db.list_feeds(_guild_id(interaction))
 
         if not feeds:
             await interaction.response.send_message(
@@ -252,7 +258,9 @@ class FeedCog(commands.Cog):
     # /feed preview <url>
     # ------------------------------------------------------------------
 
-    @feed_group.command(name="preview", description="Preview the latest item from a feed")
+    @feed_group.command(
+        name="preview", description="Preview the latest item from a feed"
+    )
     @app_commands.describe(url_or_id="Feed URL or feed ID to preview")
     async def feed_preview(
         self,
@@ -260,13 +268,14 @@ class FeedCog(commands.Cog):
         url_or_id: str,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        guild = _guild_id(interaction)
 
         # Resolve feed ID to URL if numeric
         feed_url = url_or_id
         feed_name_override = None
         if url_or_id.isdigit():
             feed = await self.bot.db.get_feed(int(url_or_id))
-            if not feed or feed["guild_id"] != interaction.guild_id:
+            if not feed or feed["guild_id"] != guild:
                 await interaction.followup.send(
                     f"Feed `{url_or_id}` not found in this server.", ephemeral=True
                 )
@@ -275,11 +284,10 @@ class FeedCog(commands.Cog):
             feed_name_override = feed["name"]
 
         # Discover actual feed URL if not already resolved from DB
+        http = self.bot.poller._http
         if not feed_name_override:
             try:
-                feed_url = await discover_feed_url(
-                    feed_url, self.bot.poller.session, _CMD_TIMEOUT
-                )
+                feed_url = await discover_feed_url(feed_url, http, _CMD_TIMEOUT)
             except FeedNotFoundError:
                 await interaction.followup.send(
                     "No RSS/Atom feed found at that URL.", ephemeral=True
@@ -287,9 +295,7 @@ class FeedCog(commands.Cog):
                 return
 
         try:
-            async with self.bot.poller.session.get(
-                feed_url, timeout=_CMD_TIMEOUT
-            ) as resp:
+            async with http.get(feed_url, timeout=_CMD_TIMEOUT) as resp:
                 raw = await resp.content.read(MAX_FEED_BYTES + 1)
                 if len(raw) > MAX_FEED_BYTES:
                     raise ValueError("Feed response too large")
@@ -336,14 +342,12 @@ class FeedCog(commands.Cog):
     async def feed_config(self, interaction: discord.Interaction) -> None:
         if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
             await interaction.response.send_message(
-                "You need the **{}** role to use this command.".format(
-                    self.bot.config.feed_manager_role
-                ),
+                _role_required_msg(self.bot.config.feed_manager_role),
                 ephemeral=True,
             )
             return
 
-        feeds = await self.bot.db.list_feeds(interaction.guild_id)
+        feeds = await self.bot.db.list_feeds(_guild_id(interaction))
         total = len(feeds)
         errored = sum(1 for f in feeds if f.get("consecutive_errors", 0) > 0)
         interval_min = self.bot.config.default_poll_interval // 60

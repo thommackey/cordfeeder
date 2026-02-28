@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 
 from cordfeeder.parser import (
-    FeedItem, FeedMetadata, parse_feed, extract_feed_metadata,
-    _strip_boilerplate, _strip_html,
+    _strip_boilerplate,
+    _strip_html,
+    extract_feed_metadata,
+    parse_feed,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -78,7 +80,6 @@ class TestParseRSSFeed:
     def test_parse_invalid_feed(self):
         with pytest.raises(ValueError):
             parse_feed("this is not xml at all")
-
 
     def test_extract_image_from_description_html(self):
         xml = """<?xml version="1.0"?>
@@ -168,11 +169,11 @@ class TestLinkProcessing:
     def test_strips_url_only_links(self):
         """Mastodon-style <a> where visible text is the URL itself."""
         html = (
-            '<p>Check this out '
+            "<p>Check this out "
             '<a href="https://example.com/article">'
             '<span class="invisible">https://</span>'
             '<span class="ellipsis">example.com/article</span>'
-            '</a></p>'
+            "</a></p>"
         )
         assert _strip_html(html) == "Check this out"
 
@@ -208,7 +209,10 @@ class TestTitleSynthesis:
           </channel>
         </rss>"""
         items = parse_feed(xml)
-        assert items[0].title == "Does Apple still not have any official accounts on Mastodon or Bluesky?"
+        assert (
+            items[0].title
+            == "Does Apple still not have any official accounts on Mastodon or Bluesky?"
+        )
 
     def test_long_summary_title_truncated(self):
         long_text = "A " * 60  # 120 chars

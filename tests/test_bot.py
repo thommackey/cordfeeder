@@ -16,6 +16,7 @@ def _make_role(name: str) -> MagicMock:
 
 def _make_interaction(role_names: list[str]) -> MagicMock:
     interaction = MagicMock()
+    interaction.user = MagicMock(spec=discord.Member)
     interaction.user.roles = [_make_role(n) for n in role_names]
     return interaction
 

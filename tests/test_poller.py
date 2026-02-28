@@ -1,14 +1,13 @@
 """Tests for the feed poller."""
 
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from cordfeeder.config import Config
 from cordfeeder.poller import (
-    ADAPTIVE_WARMUP_POLLS,
     FeedGoneError,
     FeedHTTPError,
     FeedRateLimitError,
@@ -45,10 +44,10 @@ class TestAdaptiveInterval:
     def test_frequent_posts(self):
         """Posts every 2 hours -- should poll roughly every hour."""
         timestamps = [
-            datetime(2026, 2, 26, 12, 0, tzinfo=timezone.utc),
-            datetime(2026, 2, 26, 10, 0, tzinfo=timezone.utc),
-            datetime(2026, 2, 26, 8, 0, tzinfo=timezone.utc),
-            datetime(2026, 2, 26, 6, 0, tzinfo=timezone.utc),
+            datetime(2026, 2, 26, 12, 0, tzinfo=UTC),
+            datetime(2026, 2, 26, 10, 0, tzinfo=UTC),
+            datetime(2026, 2, 26, 8, 0, tzinfo=UTC),
+            datetime(2026, 2, 26, 6, 0, tzinfo=UTC),
         ]
         interval = calculate_adaptive_interval(
             timestamps, min_interval=300, max_interval=43200
@@ -57,9 +56,9 @@ class TestAdaptiveInterval:
 
     def test_daily_posts(self):
         timestamps = [
-            datetime(2026, 2, 26, 12, 0, tzinfo=timezone.utc),
-            datetime(2026, 2, 25, 12, 0, tzinfo=timezone.utc),
-            datetime(2026, 2, 24, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 2, 26, 12, 0, tzinfo=UTC),
+            datetime(2026, 2, 25, 12, 0, tzinfo=UTC),
+            datetime(2026, 2, 24, 12, 0, tzinfo=UTC),
         ]
         interval = calculate_adaptive_interval(
             timestamps, min_interval=300, max_interval=43200
@@ -68,9 +67,9 @@ class TestAdaptiveInterval:
 
     def test_clamped_to_min(self):
         timestamps = [
-            datetime(2026, 2, 26, 12, 4, tzinfo=timezone.utc),
-            datetime(2026, 2, 26, 12, 2, tzinfo=timezone.utc),
-            datetime(2026, 2, 26, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 2, 26, 12, 4, tzinfo=UTC),
+            datetime(2026, 2, 26, 12, 2, tzinfo=UTC),
+            datetime(2026, 2, 26, 12, 0, tzinfo=UTC),
         ]
         interval = calculate_adaptive_interval(
             timestamps, min_interval=300, max_interval=43200
@@ -78,7 +77,7 @@ class TestAdaptiveInterval:
         assert interval == 300
 
     def test_single_item(self):
-        timestamps = [datetime(2026, 2, 26, 12, 0, tzinfo=timezone.utc)]
+        timestamps = [datetime(2026, 2, 26, 12, 0, tzinfo=UTC)]
         interval = calculate_adaptive_interval(
             timestamps, min_interval=300, max_interval=43200
         )
@@ -103,15 +102,11 @@ class TestExceptions:
         assert err.retry_after == 600
 
     def test_feed_server_error(self):
-        err = FeedServerError(
-            feed_id=1, url="https://example.com/feed", status=503
-        )
+        err = FeedServerError(feed_id=1, url="https://example.com/feed", status=503)
         assert err.status == 503
 
     def test_feed_http_error(self):
-        err = FeedHTTPError(
-            feed_id=1, url="https://example.com/feed", status=404
-        )
+        err = FeedHTTPError(feed_id=1, url="https://example.com/feed", status=404)
         assert err.status == 404
 
 
@@ -127,7 +122,9 @@ class TestResponseSizeLimit:
     def poller(self):
         config = _make_config()
         db = AsyncMock()
-        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.get_feed_state = AsyncMock(
+            return_value={"etag": None, "last_modified": None}
+        )
         db.update_feed_state = AsyncMock()
         bot = MagicMock()
         return Poller(config=config, db=db, bot=bot)
@@ -161,7 +158,9 @@ class TestFetchFeed:
     def poller(self):
         config = _make_config()
         db = AsyncMock()
-        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.get_feed_state = AsyncMock(
+            return_value={"etag": None, "last_modified": None}
+        )
         db.update_feed_state = AsyncMock()
         bot = MagicMock()
         p = Poller(config=config, db=db, bot=bot)
@@ -172,7 +171,9 @@ class TestFetchFeed:
         mock_response.status = status
         mock_response.headers = headers or {}
         # Mock both resp.text() and resp.content.read() for size-limited reading
-        body_bytes = text_body.encode("utf-8") if isinstance(text_body, str) else text_body
+        body_bytes = (
+            text_body.encode("utf-8") if isinstance(text_body, str) else text_body
+        )
         mock_response.text = AsyncMock(return_value=text_body)
         mock_content = AsyncMock()
         mock_content.read = AsyncMock(return_value=body_bytes)
@@ -288,7 +289,9 @@ class TestWarmupPolling:
     def poller(self):
         config = _make_config()
         db = AsyncMock()
-        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.get_feed_state = AsyncMock(
+            return_value={"etag": None, "last_modified": None}
+        )
         db.update_feed_state = AsyncMock()
         db.is_item_posted = AsyncMock(return_value=True)  # no new items to post
         db.record_posted_item = AsyncMock()
@@ -323,7 +326,7 @@ class TestWarmupPolling:
     @pytest.mark.asyncio
     async def test_new_feed_uses_default_interval(self, poller):
         """A feed created recently should use the default poll interval."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         created_at = now - timedelta(minutes=5)  # 5 min old, well within warmup
         feed_info = self._feed_info(created_at)
 
@@ -337,7 +340,8 @@ class TestWarmupPolling:
 
         # Check that update_feed_state was called with the default interval (900)
         schedule_calls = [
-            c for c in poller.db.update_feed_state.call_args_list
+            c
+            for c in poller.db.update_feed_state.call_args_list
             if "poll_interval" in (c.kwargs or {})
         ]
         assert len(schedule_calls) >= 1
@@ -346,7 +350,7 @@ class TestWarmupPolling:
     @pytest.mark.asyncio
     async def test_old_feed_uses_adaptive_interval(self, poller):
         """A feed created long ago should use the adaptive interval."""
-        created_at = datetime(2025, 1, 1, tzinfo=timezone.utc)  # over a year old
+        created_at = datetime(2025, 1, 1, tzinfo=UTC)  # over a year old
         feed_info = self._feed_info(created_at)
 
         sample_xml = _read("sample_rss.xml")
@@ -359,7 +363,8 @@ class TestWarmupPolling:
 
         # Check that the interval is NOT the default — it should be adaptive
         schedule_calls = [
-            c for c in poller.db.update_feed_state.call_args_list
+            c
+            for c in poller.db.update_feed_state.call_args_list
             if "poll_interval" in (c.kwargs or {})
         ]
         assert len(schedule_calls) >= 1

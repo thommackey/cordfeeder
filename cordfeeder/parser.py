@@ -42,6 +42,7 @@ def _process_links(html_text: str) -> str:
     trigger Discord preview chips.  This removes those while preserving
     descriptive anchor text (e.g. @mentions, article titles).
     """
+
     def _replace_link(match: re.Match) -> str:
         inner = _TAG_RE.sub("", match.group(1)).strip()
         inner = html.unescape(inner)
@@ -96,17 +97,13 @@ def _strip_boilerplate(summaries: list[str]) -> list[str]:
     prefix = _majority_common_prefix(summaries)
     if len(prefix) >= _BOILERPLATE_MIN_LEN:
         cut = len(prefix)
-        summaries = [
-            s[cut:].lstrip() if s.startswith(prefix) else s
-            for s in summaries
-        ]
+        summaries = [s[cut:].lstrip() if s.startswith(prefix) else s for s in summaries]
 
     # --- common suffix ---
     suffix = _majority_common_suffix(summaries)
     if len(suffix) >= _BOILERPLATE_MIN_LEN:
         summaries = [
-            s[: -len(suffix)].rstrip() if s.endswith(suffix) else s
-            for s in summaries
+            s[: -len(suffix)].rstrip() if s.endswith(suffix) else s for s in summaries
         ]
 
     return summaries
@@ -165,7 +162,7 @@ def _extract_image(entry: dict) -> str | None:
     """Extract image URL from media tags, enclosures, or description HTML."""
     # media_content
     for media in getattr(entry, "media_content", None) or []:
-        url = media.get("url", "")
+        url: str = media.get("url", "")
         if media.get("medium") == "image" or url.lower().split("?")[0].endswith(
             (".jpg", ".jpeg", ".png", ".gif", ".webp")
         ):
@@ -173,15 +170,15 @@ def _extract_image(entry: dict) -> str | None:
 
     # media_thumbnail
     for thumb in getattr(entry, "media_thumbnail", None) or []:
-        url = thumb.get("url")
-        if url:
-            return url
+        thumb_url: str | None = thumb.get("url")
+        if thumb_url:
+            return thumb_url
 
     # enclosures
     for enc in getattr(entry, "enclosures", None) or []:
-        enc_type = enc.get("type", "")
+        enc_type: str = enc.get("type", "")
         if enc_type.startswith("image/"):
-            return enc.get("url")
+            return str(enc.get("url")) if enc.get("url") else None
 
     # Fallback: <img> tags in description/summary HTML
     for field in ("summary", "description", "content"):
@@ -222,7 +219,7 @@ def parse_feed(raw: str) -> list[FeedItem]:
 
     # Second pass: truncate and build FeedItems.
     items: list[FeedItem] = []
-    for (entry, _), summary in zip(entries_data, cleaned_summaries):
+    for (entry, _), summary in zip(entries_data, cleaned_summaries, strict=True):
         title = entry.get("title", "")
         if not title and summary:
             title = _truncate(summary, max_len=80)

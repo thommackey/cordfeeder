@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
+import aiosqlite
 import pytest
 
 from cordfeeder.database import Database
@@ -56,7 +57,7 @@ async def test_list_feeds_by_guild(db: Database):
 @pytest.mark.asyncio
 async def test_duplicate_feed_url_same_guild(db: Database):
     await db.add_feed("https://a.com/feed", "A", 100, guild_id=1, added_by=42)
-    with pytest.raises(Exception):
+    with pytest.raises(aiosqlite.IntegrityError):
         await db.add_feed("https://a.com/feed", "A2", 101, guild_id=1, added_by=43)
 
 
@@ -135,8 +136,8 @@ async def test_update_feed_state_rejects_bad_column(db: Database):
 async def test_prune_old_items(db: Database):
     feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
 
-    old_ts = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat()
-    recent_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    old_ts = (datetime.now(UTC) - timedelta(days=120)).isoformat()
+    recent_ts = (datetime.now(UTC) - timedelta(days=10)).isoformat()
 
     await db._db.execute(
         "INSERT INTO posted_items (feed_id, item_guid, posted_at) VALUES (?, ?, ?)",

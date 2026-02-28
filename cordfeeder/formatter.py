@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import discord
 from dateutil import parser as dateutil_parser
@@ -15,16 +15,18 @@ from cordfeeder.parser import FeedItem
 _MENTION_RE = re.compile(r"@(everyone|here)|<@[!&]?\d+>")
 
 # Characters with special meaning in Discord markdown
-_MD_SPECIAL = str.maketrans({
-    "*": "\\*",
-    "_": "\\_",
-    "~": "\\~",
-    "`": "\\`",
-    "|": "\\|",
-    ">": "\\>",
-    "[": "\\[",
-    "]": "\\]",
-})
+_MD_SPECIAL = str.maketrans(
+    {
+        "*": "\\*",
+        "_": "\\_",
+        "~": "\\~",
+        "`": "\\`",
+        "|": "\\|",
+        ">": "\\>",
+        "[": "\\[",
+        "]": "\\]",
+    }
+)
 
 
 def sanitise_mentions(text: str) -> str:
@@ -86,9 +88,9 @@ def _format_date(published: str | None) -> str | None:
 
     # Ensure timezone-aware for comparison
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     delta = now - dt
 
     total_seconds = delta.total_seconds()

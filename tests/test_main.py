@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 
 import pytest
 
@@ -14,8 +13,13 @@ class TestJSONFormatter:
     def test_basic_log_entry(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="hello", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="hello",
+            args=(),
+            exc_info=None,
         )
         output = json.loads(formatter.format(record))
         assert output["msg"] == "hello"
@@ -27,8 +31,13 @@ class TestJSONFormatter:
     def test_extra_fields_included(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="with extras", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="with extras",
+            args=(),
+            exc_info=None,
         )
         record.feed_id = 42
         output = json.loads(formatter.format(record))
@@ -43,9 +52,15 @@ class TestJSONFormatter:
             raise ValueError("boom")
         except ValueError:
             import sys
+
             record = logging.LogRecord(
-                name="test", level=logging.ERROR, pathname="", lineno=0,
-                msg="failed", args=(), exc_info=sys.exc_info(),
+                name="test",
+                level=logging.ERROR,
+                pathname="",
+                lineno=0,
+                msg="failed",
+                args=(),
+                exc_info=sys.exc_info(),
             )
 
         raw_json = formatter.format(record)
@@ -68,7 +83,9 @@ class TestConfig:
     def test_invalid_poll_interval_raises(self, monkeypatch):
         monkeypatch.setenv("DISCORD_BOT_TOKEN", "test-token")
         monkeypatch.setenv("DEFAULT_POLL_INTERVAL", "not-a-number")
-        with pytest.raises(ValueError, match="DEFAULT_POLL_INTERVAL must be an integer"):
+        with pytest.raises(
+            ValueError, match="DEFAULT_POLL_INTERVAL must be an integer"
+        ):
             Config.from_env()
 
     def test_log_summary_excludes_token(self):
