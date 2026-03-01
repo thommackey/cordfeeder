@@ -2,11 +2,12 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from cordfeeder.config import Config
+from cordfeeder.parser import FeedItem
 from cordfeeder.poller import (
     FeedGoneError,
     FeedHTTPError,
@@ -364,3 +365,68 @@ class TestWarmupPolling:
         assert len(schedule_calls) >= 1
         used_interval = schedule_calls[-1].kwargs["poll_interval"]
         assert used_interval != poller.config.default_poll_interval
+
+
+# ---------------------------------------------------------------
+# max_items_per_poll cap direction
+# ---------------------------------------------------------------
+
+
+def _make_feed_item(n: int) -> FeedItem:
+    return FeedItem(
+        title=f"Post {n}",
+        link=f"https://example.com/{n}",
+        guid=f"guid-{n}",
+        summary=f"Summary {n}",
+        author=None,
+        published=None,
+        image_url=None,
+    )
+
+
+class TestMaxItemsCapDirection:
+    """When more new items arrive than max_items_per_poll, the newest are posted."""
+
+    @pytest.fixture
+    def poller(self):
+        config = _make_config(max_items_per_poll=3)
+        db = AsyncMock()
+        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.update_feed_state = AsyncMock()
+        db.get_posted_guids = AsyncMock(return_value=set())
+        db.record_posted_item = AsyncMock()
+        bot = MagicMock()
+        bot.get_channel = MagicMock(return_value=None)  # channel not found; items still recorded
+        p = Poller(config=config, db=db, bot=bot)
+        return p
+
+    def _feed_info(self) -> dict:
+        return {
+            "id": 1,
+            "url": "https://example.com/feed.xml",
+            "name": "Test Feed",
+            "channel_id": 123,
+            "poll_interval": 900,
+            "consecutive_errors": 0,
+            "created_at": datetime(2025, 1, 1, tzinfo=UTC).isoformat(),
+        }
+
+    @pytest.mark.asyncio
+    async def test_newest_items_posted_when_cap_exceeded(self, poller):
+        """With 5 new items and cap=3, the 3 newest must be posted, not the 3 oldest."""
+        # Items ordered newest-first, as parse_feed returns them
+        items = [_make_feed_item(n) for n in [5, 4, 3, 2, 1]]
+
+        with patch.object(poller, "fetch_feed", return_value=items):
+            await poller._poll_feed(self._feed_info())
+
+        posted_guids = {
+            call.args[1]
+            for call in poller.db.record_posted_item.call_args_list
+        }
+        # Newest 3 (items 5, 4, 3) must be recorded; oldest 2 (items 2, 1) must not
+        assert "guid-5" in posted_guids
+        assert "guid-4" in posted_guids
+        assert "guid-3" in posted_guids
+        assert "guid-2" not in posted_guids
+        assert "guid-1" not in posted_guids
