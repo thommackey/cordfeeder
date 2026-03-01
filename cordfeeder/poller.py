@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import aiohttp
+import discord
 from dateutil import parser as dateutil_parser
 
 from cordfeeder.config import Config
@@ -344,6 +345,21 @@ class Poller:
             )
             await self._schedule_next_poll(feed_id, backoff)
 
+    async def _resolve_channel(self, channel_id: int) -> discord.abc.Messageable | None:
+        """Look up a channel, falling back to an API call on cache miss."""
+        channel = self.bot.get_channel(channel_id)
+        if channel and hasattr(channel, "send"):
+            return channel  # type: ignore[return-value]
+        try:
+            channel = await self.bot.fetch_channel(channel_id)
+            if hasattr(channel, "send"):
+                return channel  # type: ignore[return-value]
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            pass
+        return None
+
     async def _post_item(
         self,
         feed_id: int,
@@ -353,33 +369,21 @@ class Poller:
     ) -> None:
         """Send a feed item to the appropriate Discord channel.
 
-        Always records the item as posted — even if sending fails — to prevent
-        infinite retry loops when the channel is inaccessible.
+        Raises RuntimeError if the channel cannot be resolved, so the
+        caller can apply error backoff and retry on the next poll cycle.
+        Items are only recorded as posted after successful delivery.
         """
-        channel = self.bot.get_channel(channel_id)
-        if not channel or not hasattr(channel, "send"):
-            logger.warning(
-                "channel not found",
-                extra={"feed_id": feed_id, "channel_id": channel_id},
-            )
-            await self.db.record_posted_item(feed_id, item.guid)
-            return
+        channel = await self._resolve_channel(channel_id)
+        if channel is None:
+            raise RuntimeError(f"channel {channel_id} not found or inaccessible")
 
         content = format_item_message(
             item=item,
             feed_name=feed_name,
             feed_id=feed_id,
         )
-        message_id = None
-        try:
-            msg = await channel.send(content)  # type: ignore[union-attr]
-            message_id = msg.id if hasattr(msg, "id") else None
-        except Exception:
-            logger.warning(
-                "failed to send item to channel",
-                extra={"feed_id": feed_id, "guid": item.guid, "channel_id": channel_id},
-            )
-
+        msg = await channel.send(content)  # type: ignore[union-attr]
+        message_id = msg.id if hasattr(msg, "id") else None
         await self.db.record_posted_item(feed_id, item.guid, message_id)
         logger.debug(
             "item posted",

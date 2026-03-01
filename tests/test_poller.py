@@ -288,7 +288,9 @@ class TestWarmupPolling:
             return_value={"etag": None, "last_modified": None}
         )
         db.update_feed_state = AsyncMock()
-        db.is_item_posted = AsyncMock(return_value=True)  # no new items to post
+        db.get_posted_guids = AsyncMock(
+            side_effect=lambda fid, guids: set(guids)  # all already posted
+        )
         db.record_posted_item = AsyncMock()
         bot = MagicMock()
         p = Poller(config=config, db=db, bot=bot)
@@ -391,12 +393,16 @@ class TestMaxItemsCapDirection:
     def poller(self):
         config = _make_config(max_items_per_poll=3)
         db = AsyncMock()
-        db.get_feed_state = AsyncMock(return_value={"etag": None, "last_modified": None})
+        db.get_feed_state = AsyncMock(
+            return_value={"etag": None, "last_modified": None}
+        )
         db.update_feed_state = AsyncMock()
         db.get_posted_guids = AsyncMock(return_value=set())
         db.record_posted_item = AsyncMock()
+        channel = AsyncMock()
+        channel.send = AsyncMock(return_value=MagicMock(id=1))
         bot = MagicMock()
-        bot.get_channel = MagicMock(return_value=None)  # channel not found; items still recorded
+        bot.get_channel = MagicMock(return_value=channel)
         p = Poller(config=config, db=db, bot=bot)
         return p
 
@@ -421,8 +427,7 @@ class TestMaxItemsCapDirection:
             await poller._poll_feed(self._feed_info())
 
         posted_guids = {
-            call.args[1]
-            for call in poller.db.record_posted_item.call_args_list
+            call.args[1] for call in poller.db.record_posted_item.call_args_list
         }
         # Newest 3 (items 5, 4, 3) must be recorded; oldest 2 (items 2, 1) must not
         assert "guid-5" in posted_guids
