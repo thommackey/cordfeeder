@@ -1,11 +1,45 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import aiosqlite
 import pytest
 
 from cordfeeder.database import Database
+
+_OLD_SCHEMA = """
+CREATE TABLE IF NOT EXISTS feeds (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    url         TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    channel_id  INTEGER NOT NULL,
+    guild_id    INTEGER NOT NULL,
+    added_by    INTEGER NOT NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE(url, guild_id)
+);
+
+CREATE TABLE IF NOT EXISTS feed_state (
+    feed_id             INTEGER PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE,
+    etag                TEXT,
+    last_modified       TEXT,
+    last_poll_at        TEXT,
+    next_poll_at        TEXT,
+    poll_interval       INTEGER NOT NULL DEFAULT 900,
+    consecutive_errors  INTEGER NOT NULL DEFAULT 0,
+    last_error          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS posted_items (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_id     INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    item_guid   TEXT NOT NULL,
+    posted_at   TEXT NOT NULL,
+    message_id  INTEGER,
+    UNIQUE(feed_id, item_guid)
+);
+"""
 
 
 @pytest.mark.asyncio
@@ -161,3 +195,60 @@ async def test_update_feed_url(db: Database):
     await db.update_feed_url(feed_id, "https://new.com/feed")
     feed = await db.get_feed(feed_id)
     assert feed["url"] == "https://new.com/feed"
+
+
+@pytest.mark.asyncio
+async def test_migrate_v1_adds_columns_and_copies_data(tmp_path: Path):
+    """initialise() migrates an old-schema database with separate feed_state."""
+    db_path = str(tmp_path / "legacy.db")
+
+    # Create old-schema database with data
+    async with aiosqlite.connect(db_path) as raw:
+        await raw.executescript(_OLD_SCHEMA)
+        await raw.execute(
+            """INSERT INTO feeds (url, name, channel_id, guild_id, added_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("https://example.com/feed", "Example", 100, 1, 42, "2026-01-01T00:00:00Z"),
+        )
+        await raw.execute(
+            """INSERT INTO feed_state (feed_id, etag, poll_interval, consecutive_errors)
+               VALUES (1, '"abc"', 1800, 2)""",
+        )
+        await raw.commit()
+
+    # Run initialise(), which should trigger migration
+    database = Database(db_path)
+    await database.initialise()
+
+    # State columns now exist on feeds and contain migrated data
+    state = await database.get_feed_state(1)
+    assert state is not None
+    assert state["etag"] == '"abc"'
+    assert state["poll_interval"] == 1800
+    assert state["consecutive_errors"] == 2
+
+    # get_due_feeds should work (relies on next_poll_at column)
+    due = await database.get_due_feeds()
+    assert len(due) == 1
+    assert due[0]["url"] == "https://example.com/feed"
+
+    # feed_state table should be gone
+    async with database._conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='feed_state'"
+    ) as cur:
+        assert await cur.fetchone() is None
+
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_migrate_v1_idempotent(db: Database):
+    """Running migration on an already-migrated database is a no-op."""
+    feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
+    await db.update_feed_state(feed_id, etag='"xyz"')
+
+    # Run migration again
+    await db._migrate_v1()
+
+    state = await db.get_feed_state(feed_id)
+    assert state["etag"] == '"xyz"'

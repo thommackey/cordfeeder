@@ -74,7 +74,75 @@ class Database:
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.executescript(_SCHEMA)
         await self._db.commit()
+        await self._migrate_v1()
         logger.info("database initialised", extra={"path": self._path})
+
+    async def _migrate_v1(self) -> None:
+        """Merge feed_state columns into feeds table if needed.
+
+        The v1 schema had separate ``feeds`` and ``feed_state`` tables.
+        Commit 2822c22 merged them, but ``CREATE TABLE IF NOT EXISTS``
+        does not add columns to an existing table.  This migration adds
+        the missing columns and copies data from the old ``feed_state``
+        table when present.  The operation is idempotent.
+        """
+        async with self._conn.execute("PRAGMA table_info(feeds)") as cur:
+            existing = {row[1] for row in await cur.fetchall()}
+
+        state_cols = {
+            "etag": "TEXT",
+            "last_modified": "TEXT",
+            "last_poll_at": "TEXT",
+            "next_poll_at": "TEXT",
+            "poll_interval": "INTEGER NOT NULL DEFAULT 900",
+            "consecutive_errors": "INTEGER NOT NULL DEFAULT 0",
+            "last_error": "TEXT",
+        }
+        missing = {c: t for c, t in state_cols.items() if c not in existing}
+        if not missing:
+            return
+
+        for col, typedef in missing.items():
+            await self._conn.execute(f"ALTER TABLE feeds ADD COLUMN {col} {typedef}")
+
+        # Copy data from the old feed_state table if it still exists
+        async with self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='feed_state'"
+        ) as cur:
+            has_feed_state = await cur.fetchone() is not None
+
+        if has_feed_state:
+            # Use subquery alias 's' for brevity
+            await self._conn.execute(  # noqa: E501
+                """UPDATE feeds SET
+                    etag = (SELECT s.etag
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                    last_modified = (SELECT s.last_modified
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                    last_poll_at = (SELECT s.last_poll_at
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                    next_poll_at = (SELECT s.next_poll_at
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                    poll_interval = COALESCE((SELECT s.poll_interval
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                        900),
+                    consecutive_errors = COALESCE(
+                        (SELECT s.consecutive_errors
+                        FROM feed_state s WHERE s.feed_id = feeds.id),
+                        0),
+                    last_error = (SELECT s.last_error
+                        FROM feed_state s WHERE s.feed_id = feeds.id)
+                WHERE EXISTS (
+                    SELECT 1 FROM feed_state
+                    WHERE feed_id = feeds.id)"""
+            )
+            await self._conn.execute("DROP TABLE feed_state")
+
+        await self._conn.commit()
+        logger.info(
+            "migrated feed_state columns into feeds table",
+            extra={"columns": sorted(missing)},
+        )
 
     async def close(self) -> None:
         """Close the database connection."""
