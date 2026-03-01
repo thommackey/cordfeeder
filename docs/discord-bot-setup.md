@@ -71,18 +71,15 @@ You must have the **Manage Server** permission on the target server.
 
 ---
 
-## 6. Create the Feed Manager Role
+## 6. Configure Command Permissions
 
-CordFeeder restricts feed management commands (`/feed add`, `/feed remove`, `/feed config`) to users who hold a designated role. The default role name is **Feed Manager**.
+All `/feed` commands default to requiring the **Manage Server** permission. Server admins can override this per-role or per-user in **Server Settings → Integrations → CordFeeder**.
 
-1. In your Discord server, open **Server Settings → Roles**.
-2. Click **Create Role**.
-3. Name it exactly `Feed Manager` (case-sensitive, must match `FEED_MANAGER_ROLE` in your `.env`).
-4. Assign this role to any users who should be able to manage feeds.
+For example, to let a "Feed Manager" role use commands without Manage Server:
 
-If you want a different role name, set `FEED_MANAGER_ROLE` in your `.env` accordingly and create a role with that exact name.
-
-> `/feed list` and `/feed preview` are available to everyone without a role check.
+1. Open **Server Settings → Integrations → CordFeeder**.
+2. Select the `/feed` command group.
+3. Add the role or users you want to grant access to.
 
 ---
 
@@ -98,14 +95,11 @@ cp .env.example .env
 # Required
 DISCORD_BOT_TOKEN=your-bot-token-here
 
-# Role name for feed management commands (default: Feed Manager)
-FEED_MANAGER_ROLE=Feed Manager
-
 # How often to poll feeds in seconds (default: 900 = 15 minutes; min: 300, max: 43200)
 DEFAULT_POLL_INTERVAL=900
 
 # SQLite database path (relative to working directory)
-DATABASE_PATH=cordfeeder.db
+DATABASE_PATH=data/cordfeeder.db
 
 # Log level: TRACE, DEBUG, INFO, WARN, ERROR (default: INFO)
 LOG_LEVEL=INFO
@@ -138,8 +132,8 @@ Once running, slash commands (`/feed add`, `/feed list`, etc.) will be available
 **Commands not appearing in Discord**
 Global command sync can take up to one hour on first deployment. Restart the bot and wait.
 
-**"You need the Feed Manager role" on every command**
-The role name in Discord must match `FEED_MANAGER_ROLE` exactly, including capitalisation.
+**"Missing permissions" on commands**
+By default, `/feed` commands require the Manage Server permission. Server admins can grant access to other roles via Server Settings > Integrations > CordFeeder.
 
 **Bot posts nothing after `/feed add`**
 Ensure the bot has permission to send messages and embeds in the target channel. Check that the feed URL is publicly accessible and returns valid RSS or Atom XML.

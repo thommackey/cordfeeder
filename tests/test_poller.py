@@ -25,7 +25,6 @@ def _read(name: str) -> str:
 def _make_config(**overrides) -> Config:
     defaults = dict(
         discord_token="test-token",
-        feed_manager_role="Feed Manager",
         default_poll_interval=900,
         database_path=":memory:",
         log_level="DEBUG",

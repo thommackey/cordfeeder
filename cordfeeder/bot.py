@@ -32,23 +32,14 @@ def _guild_id(interaction: discord.Interaction) -> int:
     return interaction.guild_id
 
 
-def _role_required_msg(role_name: str) -> str:
-    """Format the 'missing role' error message."""
-    return f"You need the **{role_name}** role to use this command."
-
-
-def has_feed_manager_role(interaction: discord.Interaction, role_name: str) -> bool:
-    """Check whether the interacting user has the required role (case-sensitive)."""
-    member = interaction.user
-    if not isinstance(member, discord.Member):
-        return False
-    return any(role.name == role_name for role in member.roles)
-
-
 class FeedCog(commands.Cog):
     """Slash command group for managing RSS/Atom feeds."""
 
-    feed_group = app_commands.Group(name="feed", description="Manage RSS feeds")
+    feed_group = app_commands.Group(
+        name="feed",
+        description="Manage RSS feeds",
+        default_permissions=discord.Permissions(manage_guild=True),
+    )
 
     def __init__(self, bot: CordFeederBot) -> None:
         self.bot = bot
@@ -71,13 +62,6 @@ class FeedCog(commands.Cog):
         url_or_id: str,
         channel: discord.TextChannel | None = None,
     ) -> None:
-        if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
-            await interaction.response.send_message(
-                _role_required_msg(self.bot.config.feed_manager_role),
-                ephemeral=True,
-            )
-            return
-
         await interaction.response.defer(ephemeral=True)
         guild = _guild_id(interaction)
         target_channel: discord.TextChannel = channel or interaction.channel  # type: ignore[assignment]
@@ -196,13 +180,6 @@ class FeedCog(commands.Cog):
         interaction: discord.Interaction,
         id: int,
     ) -> None:
-        if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
-            await interaction.response.send_message(
-                _role_required_msg(self.bot.config.feed_manager_role),
-                ephemeral=True,
-            )
-            return
-
         guild = _guild_id(interaction)
         feed = await self.bot.db.get_feed(id)
         if not feed or feed["guild_id"] != guild:
@@ -340,13 +317,6 @@ class FeedCog(commands.Cog):
 
     @feed_group.command(name="config", description="Show bot status and configuration")
     async def feed_config(self, interaction: discord.Interaction) -> None:
-        if not has_feed_manager_role(interaction, self.bot.config.feed_manager_role):
-            await interaction.response.send_message(
-                _role_required_msg(self.bot.config.feed_manager_role),
-                ephemeral=True,
-            )
-            return
-
         feeds = await self.bot.db.list_feeds(_guild_id(interaction))
         total = len(feeds)
         errored = sum(1 for f in feeds if f.get("consecutive_errors", 0) > 0)

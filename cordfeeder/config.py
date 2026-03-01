@@ -9,7 +9,6 @@ class Config:
     """Immutable application configuration, loaded from environment variables."""
 
     discord_token: str
-    feed_manager_role: str
     default_poll_interval: int
     database_path: str
     log_level: str
@@ -31,7 +30,6 @@ class Config:
             raise ValueError("DISCORD_BOT_TOKEN environment variable is required")
         return cls(
             discord_token=token,
-            feed_manager_role=os.environ.get("FEED_MANAGER_ROLE", "Feed Manager"),
             default_poll_interval=_int_env("DEFAULT_POLL_INTERVAL", 900),
             database_path=os.environ.get("DATABASE_PATH", "data/cordfeeder.db"),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -40,7 +38,6 @@ class Config:
     def log_summary(self) -> dict:
         """Return config values safe for logging (token redacted)."""
         return {
-            "feed_manager_role": self.feed_manager_role,
             "default_poll_interval": self.default_poll_interval,
             "min_poll_interval": self.min_poll_interval,
             "max_poll_interval": self.max_poll_interval,

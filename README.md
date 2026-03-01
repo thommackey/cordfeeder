@@ -18,7 +18,7 @@ It runs as a single process on any machine that can reach Discord and your feeds
 - **Smart formatting** — text-rich items show summaries; image-primary feeds (webcomics) show inline images; boilerplate prefixes and suffixes are stripped automatically
 - **Injection protection** — feed content is sanitised against Discord mention injection, markdown escapes, URL breakout, and newline smuggling
 - **Graceful error handling** — 410 Gone removes the feed automatically; 429/403 back off for at least 4 hours; 5xx errors use exponential backoff up to 24 hours
-- **Role-based access** — feed management commands require a configurable Discord role; list and preview are public
+- **Role-based access** — all `/feed` commands default to requiring Manage Server permission; server admins can override this per-role in Server Settings > Integrations
 - **Structured logging** — every event emits a JSON log line for easy ingestion into any log aggregator
 
 ## Project layout
@@ -72,7 +72,6 @@ Copy `.env.example` to `.env` and fill in your values:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DISCORD_BOT_TOKEN` | *(required)* | Bot authentication token from the Discord Developer Portal |
-| `FEED_MANAGER_ROLE` | `Feed Manager` | Name of the Discord role allowed to add/remove/configure feeds |
 | `DEFAULT_POLL_INTERVAL` | `900` | How often to check feeds in seconds (15 minutes). Min 300, max 43200 |
 | `DATABASE_PATH` | `data/cordfeeder.db` | Path to the SQLite database file |
 | `LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
@@ -106,7 +105,7 @@ uv run cordfeeder
 On first start you will see structured JSON log lines:
 
 ```json
-{"ts":"2026-02-27T10:00:00.000Z","level":"INFO","logger":"cordfeeder.main","msg":"starting cordfeeder","host":"myhost","app":"cordfeeder","feed_manager_role":"Feed Manager","default_poll_interval":900}
+{"ts":"2026-02-27T10:00:00.000Z","level":"INFO","logger":"cordfeeder.main","msg":"starting cordfeeder","host":"myhost","app":"cordfeeder","default_poll_interval":900}
 {"ts":"2026-02-27T10:00:01.234Z","level":"INFO","logger":"cordfeeder.bot","msg":"bot setup complete","host":"myhost","app":"cordfeeder"}
 ```
 

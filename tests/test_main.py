@@ -91,7 +91,6 @@ class TestConfig:
     def test_log_summary_excludes_token(self):
         config = Config(
             discord_token="secret-token-123",
-            feed_manager_role="Feed Manager",
             default_poll_interval=900,
             database_path="test.db",
             log_level="INFO",
