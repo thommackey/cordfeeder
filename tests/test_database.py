@@ -62,13 +62,14 @@ async def test_duplicate_feed_url_same_guild(db: Database):
 
 
 @pytest.mark.asyncio
-async def test_feed_state_created_on_add(db: Database):
+async def test_feed_defaults_on_add(db: Database):
     feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
     state = await db.get_feed_state(feed_id)
     assert state is not None
-    assert state["feed_id"] == feed_id
     assert state["poll_interval"] == 900
     assert state["consecutive_errors"] == 0
+    assert state["etag"] is None
+    assert state["last_poll_at"] is None
 
 
 @pytest.mark.asyncio
@@ -115,13 +116,11 @@ async def test_remove_feed_cascades(db: Database):
     feed_id = await db.add_feed("https://a.com/feed", "A", 100, 1, 42)
     await db.record_posted_item(feed_id, "guid-1")
 
-    # Verify state and items exist
-    assert await db.get_feed_state(feed_id) is not None
     assert await db.is_item_posted(feed_id, "guid-1") is True
 
     await db.remove_feed(feed_id)
 
-    assert await db.get_feed_state(feed_id) is None
+    assert await db.get_feed(feed_id) is None
     assert await db.is_item_posted(feed_id, "guid-1") is False
 
 

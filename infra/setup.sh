@@ -16,13 +16,13 @@ REPO_URL="https://github.com/thommackey/cordfeeder.git"
 log() { printf '[setup] %s\n' "$*"; }
 die() { printf '[setup] ERROR: %s\n' "$*" >&2; exit 1; }
 
-# ── Preflight ──────────────────────────────────────────────────────────
+# -- Preflight ---------------------------------------------------------------
 command -v doctl >/dev/null 2>&1 || die "doctl not found. Install with: brew install doctl"
 doctl account get >/dev/null 2>&1 || die "doctl not authenticated. Run: doctl auth init"
 
 [[ -f "$SSH_KEY_PATH" ]] || die "SSH public key not found at $SSH_KEY_PATH"
 
-# ── SSH key ────────────────────────────────────────────────────────────
+# -- SSH key ------------------------------------------------------------------
 SSH_KEY_FINGERPRINT=$(ssh-keygen -l -E md5 -f "$SSH_KEY_PATH" | awk '{print $2}' | sed 's/^MD5://')
 
 if doctl compute ssh-key get "$SSH_KEY_FINGERPRINT" >/dev/null 2>&1; then
@@ -34,7 +34,7 @@ fi
 
 SSH_KEY_ID=$(doctl compute ssh-key get "$SSH_KEY_FINGERPRINT" --format ID --no-header)
 
-# ── Droplet ────────────────────────────────────────────────────────────
+# -- Droplet ------------------------------------------------------------------
 if doctl compute droplet get "$DROPLET_NAME" >/dev/null 2>&1; then
     die "Droplet '$DROPLET_NAME' already exists. Delete it first or choose a different name."
 fi
@@ -50,7 +50,7 @@ doctl compute droplet create "$DROPLET_NAME" \
 DROPLET_IP=$(doctl compute droplet get "$DROPLET_NAME" --format PublicIPv4 --no-header)
 log "Droplet ready at $DROPLET_IP"
 
-# ── Firewall ───────────────────────────────────────────────────────────
+# -- Firewall -----------------------------------------------------------------
 DROPLET_ID=$(doctl compute droplet get "$DROPLET_NAME" --format ID --no-header)
 
 log "Creating firewall '$FIREWALL_NAME'..."
@@ -60,7 +60,7 @@ doctl compute firewall create \
     --inbound-rules "protocol:tcp,ports:22,address:0.0.0.0/0,address:::/0" \
     --outbound-rules "protocol:tcp,ports:all,address:0.0.0.0/0,address:::/0 protocol:udp,ports:all,address:0.0.0.0/0,address:::/0 protocol:icmp,address:0.0.0.0/0,address:::/0"
 
-# ── Provision ──────────────────────────────────────────────────────────
+# -- Provision ----------------------------------------------------------------
 log "Waiting for SSH to become available..."
 for i in $(seq 1 30); do
     if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "root@$DROPLET_IP" true 2>/dev/null; then
@@ -69,32 +69,36 @@ for i in $(seq 1 30); do
     sleep 2
 done
 
-log "Installing Docker on the droplet..."
+log "Provisioning droplet..."
 ssh "root@$DROPLET_IP" bash <<'REMOTE'
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -qq
-apt-get install -yqq ca-certificates curl gnupg
+apt-get install -yqq ca-certificates curl git
 
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-  > /etc/apt/sources.list.d/docker.list
-
-apt-get update -qq
-apt-get install -yqq docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-systemctl enable --now docker
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 REMOTE
 
 log "Cloning repository..."
 ssh "root@$DROPLET_IP" "git clone $REPO_URL /root/cordfeeder"
 
-# ── Done ───────────────────────────────────────────────────────────────
+log "Installing dependencies and systemd unit..."
+ssh "root@$DROPLET_IP" bash <<'REMOTE'
+set -euo pipefail
+cd /root/cordfeeder
+
+# Install Python dependencies
+~/.local/bin/uv sync --frozen --no-dev
+
+# Install and enable systemd service
+cp infra/cordfeeder.service /etc/systemd/system/cordfeeder.service
+systemctl daemon-reload
+systemctl enable cordfeeder
+REMOTE
+
+# -- Done ---------------------------------------------------------------------
 log ""
 log "=== Setup complete ==="
 log "Droplet IP: $DROPLET_IP"

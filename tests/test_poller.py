@@ -11,7 +11,6 @@ from cordfeeder.poller import (
     FeedGoneError,
     FeedHTTPError,
     FeedRateLimitError,
-    FeedServerError,
     Poller,
     calculate_adaptive_interval,
 )
@@ -100,10 +99,6 @@ class TestExceptions:
             feed_id=1, url="https://example.com/feed", retry_after=600
         )
         assert err.retry_after == 600
-
-    def test_feed_server_error(self):
-        err = FeedServerError(feed_id=1, url="https://example.com/feed", status=503)
-        assert err.status == 503
 
     def test_feed_http_error(self):
         err = FeedHTTPError(feed_id=1, url="https://example.com/feed", status=404)
@@ -252,14 +247,14 @@ class TestFetchFeed:
         assert exc_info.value.retry_after is None
 
     @pytest.mark.asyncio
-    async def test_raises_server_error_on_5xx(self, poller):
+    async def test_raises_http_error_on_5xx(self, poller):
         mock_response = self._mock_response(503)
 
         mock_session = AsyncMock()
         mock_session.get = MagicMock(return_value=mock_response)
         poller.session = mock_session
 
-        with pytest.raises(FeedServerError) as exc_info:
+        with pytest.raises(FeedHTTPError) as exc_info:
             await poller.fetch_feed(feed_id=1, url="https://example.com/feed.xml")
         assert exc_info.value.status == 503
 

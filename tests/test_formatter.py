@@ -1,8 +1,6 @@
 """Tests for feed item formatting."""
 
-import discord
-
-from cordfeeder.formatter import feed_colour, format_item_embed, format_item_message
+from cordfeeder.formatter import format_item_message
 from cordfeeder.parser import FeedItem
 
 # ---------------------------------------------------------------
@@ -91,53 +89,6 @@ def test_message_with_date():
     # Should have a date component (either relative or absolute)
     parts = msg.split(" · ")
     assert len(parts) >= 2  # at minimum: feed name · title
-
-
-# ---------------------------------------------------------------
-# Embed format (used for previews)
-# ---------------------------------------------------------------
-
-
-def test_format_basic_embed():
-    item = FeedItem(
-        title="Test Article",
-        link="https://example.com/1",
-        guid="1",
-        summary="A summary of the article.",
-        author="Alice",
-        published="Wed, 25 Feb 2026 12:00:00 GMT",
-        image_url=None,
-    )
-    embed = format_item_embed(
-        item,
-        feed_name="Test Feed",
-        feed_url="https://example.com/rss",
-        feed_id=3,
-    )
-    assert isinstance(embed, discord.Embed)
-    assert embed.title == "Test Article"
-    assert embed.url == "https://example.com/1"
-    assert "summary" in embed.description.lower()
-    assert "3" in embed.footer.text
-
-
-def test_format_embed_with_image():
-    item = FeedItem(
-        title="Image Post",
-        link="https://example.com/2",
-        guid="2",
-        summary="Has an image.",
-        author=None,
-        published=None,
-        image_url="https://example.com/img.jpg",
-    )
-    embed = format_item_embed(
-        item,
-        feed_name="Feed",
-        feed_url="https://example.com/rss",
-        feed_id=1,
-    )
-    assert embed.thumbnail.url == "https://example.com/img.jpg"
 
 
 def test_message_escapes_discord_mentions():
@@ -282,11 +233,3 @@ def test_message_title_newline_injection():
     msg = format_item_message(item, feed_name="Feed", feed_id=1)
     # Must be a single header line — no newline breakout
     assert msg.count("\n") == 0
-
-
-def test_feed_colour_consistent():
-    c1 = feed_colour("https://example.com/rss")
-    c2 = feed_colour("https://example.com/rss")
-    c3 = feed_colour("https://other.com/rss")
-    assert c1 == c2
-    assert c1 != c3

@@ -9,25 +9,21 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS feeds (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    url         TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    channel_id  INTEGER NOT NULL,
-    guild_id    INTEGER NOT NULL,
-    added_by    INTEGER NOT NULL,
-    created_at  TEXT NOT NULL,
-    UNIQUE(url, guild_id)
-);
-
-CREATE TABLE IF NOT EXISTS feed_state (
-    feed_id             INTEGER PRIMARY KEY REFERENCES feeds(id) ON DELETE CASCADE,
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    url                 TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    channel_id          INTEGER NOT NULL,
+    guild_id            INTEGER NOT NULL,
+    added_by            INTEGER NOT NULL,
+    created_at          TEXT NOT NULL,
     etag                TEXT,
     last_modified       TEXT,
     last_poll_at        TEXT,
     next_poll_at        TEXT,
     poll_interval       INTEGER NOT NULL DEFAULT 900,
     consecutive_errors  INTEGER NOT NULL DEFAULT 0,
-    last_error          TEXT
+    last_error          TEXT,
+    UNIQUE(url, guild_id)
 );
 
 CREATE TABLE IF NOT EXISTS posted_items (
@@ -41,7 +37,7 @@ CREATE TABLE IF NOT EXISTS posted_items (
 """
 
 
-_FEED_STATE_COLUMNS = frozenset(
+_UPDATABLE_STATE_COLUMNS = frozenset(
     {
         "etag",
         "last_modified",
@@ -96,7 +92,7 @@ class Database:
         guild_id: int,
         added_by: int,
     ) -> int:
-        """Insert a new feed and its initial state row.
+        """Insert a new feed row (state columns use schema defaults).
 
         Returns:
             The auto-generated feed ID.
@@ -109,10 +105,6 @@ class Database:
         ) as cursor:
             feed_id = cursor.lastrowid
         assert feed_id is not None
-
-        await self._conn.execute(
-            "INSERT INTO feed_state (feed_id) VALUES (?)", (feed_id,)
-        )
         await self._conn.commit()
         logger.info(
             "feed added",
@@ -121,7 +113,7 @@ class Database:
         return feed_id
 
     async def remove_feed(self, feed_id: int) -> None:
-        """Delete a feed and cascade to its state and posted items."""
+        """Delete a feed and cascade to its posted items."""
         await self._conn.execute("DELETE FROM feeds WHERE id = ?", (feed_id,))
         await self._conn.commit()
         logger.info("feed removed", extra={"feed_id": feed_id})
@@ -135,14 +127,9 @@ class Database:
         return dict(row) if row else None
 
     async def list_feeds(self, guild_id: int) -> list[dict]:
-        """List all feeds for a guild, joined with their polling state."""
+        """List all feeds for a guild."""
         async with self._conn.execute(
-            """SELECT f.*, fs.last_poll_at, fs.next_poll_at,
-                      fs.poll_interval, fs.consecutive_errors
-               FROM feeds f
-               LEFT JOIN feed_state fs ON fs.feed_id = f.id
-               WHERE f.guild_id = ?
-               ORDER BY f.name""",
+            "SELECT * FROM feeds WHERE guild_id = ? ORDER BY name",
             (guild_id,),
         ) as cursor:
             rows = await cursor.fetchall()
@@ -183,28 +170,31 @@ class Database:
     # ------------------------------------------------------------------
 
     async def get_feed_state(self, feed_id: int) -> dict | None:
-        """Fetch the polling state for a feed, or None if not found."""
+        """Fetch the polling state columns for a feed, or None if not found."""
         async with self._conn.execute(
-            "SELECT * FROM feed_state WHERE feed_id = ?", (feed_id,)
+            """SELECT etag, last_modified, last_poll_at, next_poll_at,
+                      poll_interval, consecutive_errors, last_error
+               FROM feeds WHERE id = ?""",
+            (feed_id,),
         ) as cursor:
             row = await cursor.fetchone()
         return dict(row) if row else None
 
     async def update_feed_state(self, feed_id: int, **kwargs: object) -> None:
-        """Update one or more feed_state columns.
+        """Update one or more state columns on a feed row.
 
         Raises:
             ValueError: If any column name is not in the allowed set.
         """
         if not kwargs:
             return
-        bad = kwargs.keys() - _FEED_STATE_COLUMNS
+        bad = kwargs.keys() - _UPDATABLE_STATE_COLUMNS
         if bad:
             raise ValueError(f"unknown feed_state columns: {sorted(bad)}")
         columns = ", ".join(f"{k} = ?" for k in kwargs)
         values = list(kwargs.values()) + [feed_id]
         await self._conn.execute(
-            f"UPDATE feed_state SET {columns} WHERE feed_id = ?",  # noqa: S608
+            f"UPDATE feeds SET {columns} WHERE id = ?",  # noqa: S608
             values,
         )
         await self._conn.commit()
@@ -234,6 +224,17 @@ class Database:
         ) as cursor:
             return await cursor.fetchone() is not None
 
+    async def get_posted_guids(self, feed_id: int, guids: list[str]) -> set[str]:
+        """Return the subset of guids that have already been posted for a feed."""
+        if not guids:
+            return set()
+        placeholders = ",".join("?" for _ in guids)
+        # Placeholders are generated "?" literals, not user input
+        sql = f"SELECT item_guid FROM posted_items WHERE feed_id = ? AND item_guid IN ({placeholders})"  # noqa: S608, E501
+        async with self._conn.execute(sql, [feed_id, *guids]) as cursor:
+            rows = await cursor.fetchall()
+        return {row["item_guid"] for row in rows}
+
     async def prune_old_items(self, days: int = 90) -> int:
         """Delete posted_items older than *days*. Returns the count deleted."""
         now = datetime.now(UTC).isoformat()
@@ -255,12 +256,9 @@ class Database:
         """Return feeds whose next_poll_at is NULL or in the past."""
         now = datetime.now(UTC).isoformat()
         async with self._conn.execute(
-            """SELECT f.*, fs.etag, fs.last_modified, fs.last_poll_at,
-                      fs.next_poll_at, fs.poll_interval, fs.consecutive_errors
-               FROM feeds f
-               JOIN feed_state fs ON fs.feed_id = f.id
-               WHERE fs.next_poll_at IS NULL OR fs.next_poll_at <= ?
-               ORDER BY fs.next_poll_at""",
+            """SELECT * FROM feeds
+               WHERE next_poll_at IS NULL OR next_poll_at <= ?
+               ORDER BY next_poll_at""",
             (now,),
         ) as cursor:
             rows = await cursor.fetchall()

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from datetime import UTC, datetime
 
-import discord
 from dateutil import parser as dateutil_parser
 
 from cordfeeder.parser import FeedItem
@@ -64,12 +62,6 @@ def _sanitise_url(url: str) -> str:
 def _strip_newlines(text: str) -> str:
     """Replace newlines with spaces to prevent content injection in headers."""
     return text.replace("\n", " ").replace("\r", "")
-
-
-def feed_colour(feed_url: str) -> discord.Colour:
-    """Generate a consistent colour from a feed URL by hashing."""
-    digest = hashlib.md5(feed_url.encode()).hexdigest()  # noqa: S324
-    return discord.Colour(int(digest[:6], 16))
 
 
 def _format_date(published: str | None) -> str | None:
@@ -161,40 +153,3 @@ def format_item_message(
         return f"{header}\n{quoted}"
 
     return header
-
-
-def format_item_embed(
-    item: FeedItem,
-    feed_name: str,
-    feed_url: str,
-    feed_id: int,
-    feed_icon_url: str | None = None,
-) -> discord.Embed:
-    """Format a feed item as a Discord embed (used for previews)."""
-    description = item.summary if item.summary else None
-
-    embed = discord.Embed(
-        title=item.title,
-        url=item.link,
-        description=description,
-        colour=feed_colour(feed_url),
-    )
-
-    author_kwargs: dict[str, str] = {"name": feed_name}
-    if feed_icon_url:
-        author_kwargs["icon_url"] = feed_icon_url
-    embed.set_author(**author_kwargs)
-
-    if item.image_url:
-        embed.set_thumbnail(url=item.image_url)
-
-    # Footer: formatted date + feed ID
-    footer_parts: list[str] = []
-    formatted_date = _format_date(item.published)
-    if formatted_date:
-        footer_parts.append(formatted_date)
-    footer_parts.append(f"feed ID: {feed_id}")
-
-    embed.set_footer(text=" \u00b7 ".join(footer_parts))
-
-    return embed

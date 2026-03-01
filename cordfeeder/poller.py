@@ -80,18 +80,8 @@ class FeedRateLimitError(Exception):
         super().__init__(f"Feed {feed_id} ({url}) rate limited")
 
 
-class FeedServerError(Exception):
-    """Raised when a feed returns a 5xx status."""
-
-    def __init__(self, feed_id: int, url: str, status: int) -> None:
-        self.feed_id = feed_id
-        self.url = url
-        self.status = int(status)
-        super().__init__(f"Feed {feed_id} ({url}) server error {status}")
-
-
 class FeedHTTPError(Exception):
-    """Raised when a feed returns an unexpected non-2xx status."""
+    """Raised when a feed returns an unexpected non-2xx status (including 5xx)."""
 
     def __init__(self, feed_id: int, url: str, status: int) -> None:
         self.feed_id = feed_id
@@ -211,9 +201,6 @@ class Poller:
                         feed_id=feed_id, url=url, retry_after=retry_after
                     )
 
-                if 500 <= status < 600:
-                    raise FeedServerError(feed_id=feed_id, url=url, status=status)
-
                 if status != 200:
                     raise FeedHTTPError(feed_id=feed_id, url=url, status=status)
 
@@ -261,10 +248,10 @@ class Poller:
                 return
 
             # Filter to unposted items
-            new_items = []
-            for item in items:
-                if not await self.db.is_item_posted(feed_id, item.guid):
-                    new_items.append(item)
+            posted = await self.db.get_posted_guids(
+                feed_id, [item.guid for item in items]
+            )
+            new_items = [item for item in items if item.guid not in posted]
 
             # Cap at max_items_per_poll (take last N for most recent, then reverse)
             if len(new_items) > self.config.max_items_per_poll:

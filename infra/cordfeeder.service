@@ -1,0 +1,15 @@
+[Unit]
+Description=CordFeeder Discord RSS bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/cordfeeder
+EnvironmentFile=/root/cordfeeder/.env
+ExecStart=/root/cordfeeder/.venv/bin/python -m cordfeeder
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

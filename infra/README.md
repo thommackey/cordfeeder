@@ -1,6 +1,6 @@
 # CordFeeder Infrastructure
 
-Scripts for deploying CordFeeder to a DigitalOcean droplet.
+Scripts for deploying CordFeeder to a DigitalOcean droplet via systemd.
 
 ## Prerequisites
 
@@ -12,13 +12,13 @@ doctl auth init  # paste your DO API token
 ## First-time setup
 
 ```bash
-# Create droplet, firewall, install Docker, clone repo
+# Create droplet, firewall, install uv, clone repo, enable systemd unit
 ./infra/setup.sh
 
 # Copy secrets to the droplet (IP printed by setup.sh)
 scp .env root@<DROPLET_IP>:~/cordfeeder/.env
 
-# Build and start the bot
+# Deploy the bot
 DROPLET_IP=<DROPLET_IP> ./deploy.sh
 ```
 
@@ -29,6 +29,22 @@ DROPLET_IP=<DROPLET_IP> ./deploy.sh
 ```
 
 Or omit `DROPLET_IP` if you have `doctl` installed — the script will look it up.
+
+## Managing the service
+
+```bash
+# View logs
+ssh root@<DROPLET_IP> journalctl -u cordfeeder -f
+
+# Restart
+ssh root@<DROPLET_IP> systemctl restart cordfeeder
+
+# Stop
+ssh root@<DROPLET_IP> systemctl stop cordfeeder
+
+# Status
+ssh root@<DROPLET_IP> systemctl status cordfeeder
+```
 
 ## Tear down
 

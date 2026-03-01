@@ -27,17 +27,14 @@ cd /root/cordfeeder
 echo "[deploy] Pulling latest code..."
 git pull origin main
 
-echo "[deploy] Ensuring data directory exists..."
-mkdir -p data && chown 1000:1000 data
+echo "[deploy] Syncing dependencies..."
+~/.local/bin/uv sync --frozen --no-dev
 
-echo "[deploy] Building and starting container..."
-docker compose up -d --build
+echo "[deploy] Restarting service..."
+systemctl restart cordfeeder
 
-echo "[deploy] Tailing logs (15s)..."
-timeout 15 docker compose logs -f 2>/dev/null || true
-
-echo "[deploy] Done. Container status:"
-docker compose ps
+echo "[deploy] Recent logs:"
+journalctl -u cordfeeder -n 20 --no-pager
 REMOTE
 
 log "Deploy complete."
