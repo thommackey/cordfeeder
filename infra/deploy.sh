@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Deploy CordFeeder to a running droplet.
-# Usage: DROPLET_IP=x.x.x.x ./deploy.sh
+# Usage: DROPLET_IP=x.x.x.x ./infra/deploy.sh
 #
 set -euo pipefail
 

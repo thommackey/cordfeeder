@@ -108,7 +108,7 @@ def main() -> None:
         loop = asyncio.get_running_loop()
         stop_event = asyncio.Event()
 
-        # Handle SIGTERM (Docker stop) for graceful shutdown
+        # Handle SIGTERM / SIGINT for graceful shutdown
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, stop_event.set)
 

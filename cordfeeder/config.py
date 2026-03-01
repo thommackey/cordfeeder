@@ -33,7 +33,7 @@ class Config:
             discord_token=token,
             feed_manager_role=os.environ.get("FEED_MANAGER_ROLE", "Feed Manager"),
             default_poll_interval=_int_env("DEFAULT_POLL_INTERVAL", 900),
-            database_path=os.environ.get("DATABASE_PATH", "cordfeeder.db"),
+            database_path=os.environ.get("DATABASE_PATH", "data/cordfeeder.db"),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
         )
 

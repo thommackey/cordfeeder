@@ -74,7 +74,7 @@ Copy `.env.example` to `.env` and fill in your values:
 | `DISCORD_BOT_TOKEN` | *(required)* | Bot authentication token from the Discord Developer Portal |
 | `FEED_MANAGER_ROLE` | `Feed Manager` | Name of the Discord role allowed to add/remove/configure feeds |
 | `DEFAULT_POLL_INTERVAL` | `900` | How often to check feeds in seconds (15 minutes). Min 300, max 43200 |
-| `DATABASE_PATH` | `cordfeeder.db` | Path to the SQLite database file |
+| `DATABASE_PATH` | `data/cordfeeder.db` | Path to the SQLite database file |
 | `LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
 
 CordFeeder validates configuration on startup and exits with a clear error if `DISCORD_BOT_TOKEN` is missing or if any integer variable is not parseable.
@@ -373,7 +373,7 @@ Every log line includes `ts` (ISO 8601 UTC), `level`, `logger`, `msg`, `host`, `
 
 ## Deployment
 
-CordFeeder runs directly under systemd on a DigitalOcean droplet. A single `deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
+CordFeeder runs directly under systemd on a DigitalOcean droplet. `infra/deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
 
 ### DigitalOcean deployment
 
@@ -396,10 +396,10 @@ This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs uv, clones 
 
 ```bash
 scp .env root@<DROPLET_IP>:~/cordfeeder/.env
-DROPLET_IP=<DROPLET_IP> ./deploy.sh
+DROPLET_IP=<DROPLET_IP> ./infra/deploy.sh
 ```
 
-`deploy.sh` SSHes in, pulls the latest code, syncs dependencies via uv, and restarts the systemd service. On subsequent deploys, just run `deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
+`infra/deploy.sh` SSHes in, pulls the latest code, syncs dependencies via uv, and restarts the systemd service. On subsequent deploys, just run `infra/deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
 
 **Tear down** when you are done:
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from pathlib import Path
 
 import aiosqlite
 
@@ -66,6 +67,7 @@ class Database:
 
     async def initialise(self) -> None:
         """Open the SQLite connection and create tables."""
+        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(self._path)
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA journal_mode=WAL")

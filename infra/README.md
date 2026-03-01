@@ -19,13 +19,13 @@ doctl auth init  # paste your DO API token
 scp .env root@<DROPLET_IP>:~/cordfeeder/.env
 
 # Deploy the bot
-DROPLET_IP=<DROPLET_IP> ./deploy.sh
+DROPLET_IP=<DROPLET_IP> ./infra/deploy.sh
 ```
 
 ## Subsequent deploys
 
 ```bash
-DROPLET_IP=<DROPLET_IP> ./deploy.sh
+DROPLET_IP=<DROPLET_IP> ./infra/deploy.sh
 ```
 
 Or omit `DROPLET_IP` if you have `doctl` installed — the script will look it up.
