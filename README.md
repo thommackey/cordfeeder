@@ -110,7 +110,7 @@ On first start you will see structured JSON log lines:
 {"ts":"2026-02-27T10:00:01.234Z","level":"INFO","logger":"cordfeeder.bot","msg":"bot setup complete","host":"myhost","app":"cordfeeder"}
 ```
 
-For Docker or systemd deployments, SIGTERM triggers graceful shutdown — the poller finishes any in-flight requests before exiting.
+SIGTERM triggers graceful shutdown — the poller finishes any in-flight requests before exiting.
 
 ## Slash commands
 
@@ -308,13 +308,12 @@ URL breakout:
 
 ## Database
 
-State is stored in three SQLite tables:
+State is stored in two SQLite tables:
 
-- **`feeds`** — one row per subscribed feed (URL, name, channel, guild, who added it)
-- **`feed_state`** — polling metadata (ETag, Last-Modified, next poll time, error count)
+- **`feeds`** — one row per subscribed feed: identity (URL, name, channel, guild, who added it) and polling state (ETag, Last-Modified, next poll time, error count)
 - **`posted_items`** — GUID of every item ever posted; rows older than 90 days are pruned daily
 
-Cascaded deletes keep everything consistent: removing a feed cleans up its state and all posted-item records automatically. The database runs in WAL mode for better concurrent read performance.
+Cascaded deletes keep everything consistent: removing a feed cleans up all its posted-item records automatically. The database runs in WAL mode for better concurrent read performance.
 
 ## Development
 
@@ -323,22 +322,16 @@ uv sync               # install all dependencies including dev extras
 uv run pytest         # run the full test suite
 ```
 
-The test suite has 81 tests covering the parser, formatter, poller, database layer, bot commands, and an end-to-end integration test.
+The test suite covers the parser, formatter, poller, database layer, bot commands, and end-to-end integration tests.
 
 ```bash
 uv run pytest --tb=no -q 2>&1
 ```
 
 ```output
-........................................................................ [ 88%]
-.........                                                                [100%]
-=============================== warnings summary ===============================
-.venv/lib/python3.12/site-packages/discord/player.py:30
-  /home/user/cordfeeder/.venv/lib/python3.12/site-packages/discord/player.py:30: DeprecationWarning: 'audioop' is deprecated and slated for removal in Python 3.13
-    import audioop
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-81 passed, 1 warning in 1.20s
+........................................................................ [ 83%]
+..............                                                           [100%]
+86 passed, 1 warning in 0.29s
 ```
 
 ## Structured logging
@@ -380,41 +373,7 @@ Every log line includes `ts` (ISO 8601 UTC), `level`, `logger`, `msg`, `host`, `
 
 ## Deployment
 
-CordFeeder ships with Docker packaging and DigitalOcean infrastructure scripts. A single `deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
-
-### Docker
-
-The app runs in a single container. `docker-compose.yml` handles restart policy, log rotation, and SQLite volume persistence.
-
-```bash
-docker compose build --quiet && echo 'Build succeeded' && docker compose config --services
-```
-
-```output
-Build succeeded
-cordfeeder
-```
-
-```bash
-cat docker-compose.yml
-```
-
-```output
-services:
-  cordfeeder:
-    build: .
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      DATABASE_PATH: /data/cordfeeder.db
-    volumes:
-      - ./data:/data
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
+CordFeeder runs directly under systemd on a DigitalOcean droplet. A single `deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
 
 ### DigitalOcean deployment
 
@@ -431,7 +390,7 @@ doctl auth init    # paste your DO API token
 ./infra/setup.sh
 ```
 
-This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs Docker, clones the repo, and sets up an SSH-only firewall. Override defaults with `DROPLET_NAME`, `DROPLET_REGION`, or `DROPLET_SIZE` env vars.
+This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs uv, clones the repo, and enables the systemd unit. Override defaults with `DROPLET_NAME`, `DROPLET_REGION`, or `DROPLET_SIZE` env vars.
 
 **Copy your secrets and deploy:**
 
@@ -440,7 +399,7 @@ scp .env root@<DROPLET_IP>:~/cordfeeder/.env
 DROPLET_IP=<DROPLET_IP> ./deploy.sh
 ```
 
-`deploy.sh` SSHes in, pulls the latest code, rebuilds the container, and tails the logs to confirm startup. On subsequent deploys, just run `deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
+`deploy.sh` SSHes in, pulls the latest code, syncs dependencies via uv, and restarts the systemd service. On subsequent deploys, just run `deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
 
 **Tear down** when you are done:
 
@@ -455,19 +414,19 @@ See [infra/README.md](infra/README.md) for full configuration reference.
 Tail live logs from the droplet:
 
 ```bash
-ssh root@<DROPLET_IP> "cd cordfeeder && docker compose logs -f"
+ssh root@<DROPLET_IP> journalctl -u cordfeeder -f
 ```
 
 Filter for errors:
 
 ```bash
-ssh root@<DROPLET_IP> "cd cordfeeder && docker compose logs --no-log-prefix" | jq 'select(.level == "ERROR")'
+ssh root@<DROPLET_IP> journalctl -u cordfeeder --no-pager | jq 'select(.level == "ERROR")'
 ```
 
-Check container health:
+Check service status:
 
 ```bash
-ssh root@<DROPLET_IP> "cd cordfeeder && docker compose ps"
+ssh root@<DROPLET_IP> systemctl status cordfeeder
 ```
 
 SIGTERM triggers graceful shutdown: the bot closes the Discord WebSocket, the poller drains in-flight requests, and the database connection is cleanly closed before the process exits.
@@ -475,4 +434,3 @@ SIGTERM triggers graceful shutdown: the bot closes the Discord WebSocket, the po
 ## See also
 
 - [Discord bot setup guide](docs/discord-bot-setup.md) — step-by-step instructions for creating the Discord application, bot token, and invite URL
-- [Design document](docs/plans/2026-02-26-cordfeeder-design.md) — architecture decisions and data model
