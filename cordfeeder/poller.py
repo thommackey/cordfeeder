@@ -253,9 +253,10 @@ class Poller:
             )
             new_items = [item for item in items if item.guid not in posted]
 
-            # Cap at max_items_per_poll (take last N for most recent, then reverse)
+            # Cap at max_items_per_poll. Feeds are newest-first, so slice from the
+            # front to keep the most recent items, then reverse to post oldest-first.
             if len(new_items) > self.config.max_items_per_poll:
-                new_items = new_items[-self.config.max_items_per_poll :]
+                new_items = new_items[: self.config.max_items_per_poll]
             new_items = list(reversed(new_items))
 
             # Post items oldest-first
