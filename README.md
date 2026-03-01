@@ -23,14 +23,15 @@ It runs as a single process on any machine that can reach Discord and your feeds
 
 ## Permissions
 
-By default, all `/feed` commands require the **Manage Server** permission. Server admins can override this to grant access to any role, user, or channel.
+By default, all `/feed` commands require the **Manage Server** permission. Server admins can change who has access via the Integrations page.
 
 To configure (desktop Discord only):
 
 1. Open **Server Settings** (click the server name, top-left).
 2. Go to the **Integrations** tab.
 3. Find **CordFeeder** in the list and click **Manage**.
-4. Under **Roles & Members**, click **Add roles or members** and grant access to the roles or users you want.
+4. Under **Roles & Members**, toggle `@everyone` off (red X) to enforce the Manage Server default, or leave it on to allow all users.
+5. Click **Add roles or members** to grant access to specific roles.
 
 Commands are hidden from users who lack permission to run them.
 
