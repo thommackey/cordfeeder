@@ -1,29 +1,39 @@
 # CordFeeder
 
-<!-- showboat-id: 8bad4866-e5d4-4b5e-be95-ce9281a1872b -->
+CordFeeder is a Discord bot that monitors RSS and Atom feeds and posts new items to your Discord channels. 
 
-CordFeeder is a Discord bot that monitors RSS and Atom feeds and posts new items to your Discord channels. Subscribe feeds with a single slash command, and new articles appear automatically — no manual checking, no missed posts.
-
-It runs as a single process on any machine that can reach Discord and your feeds. State persists in a local SQLite database, so restarts are seamless.
-
-**No web server. No external queue. No separate workers.** Just a bot that watches feeds.
+(It is also an exercise in agentic engineering. No code has been written or reviewed by a human; everything has been done through prompting Claude Code with a combo of Opus 4.6 and Sonnet 4.6, with some subagents using Haiku. This README was created by CC but edited by me by hand; I still cannot get any LLM to make readable, sensible prose or edits.)
 
 ## Features
 
-- **Slash commands** — manage feeds from Discord with `/feed add`, `/feed remove`, `/feed list`, `/feed preview`, and `/feed config`
-- **Auto-discovery** — paste any URL; CordFeeder probes for an RSS or Atom feed automatically
-- **Adaptive polling** — adjusts check frequency to match how often each feed publishes (5 minutes–12 hours)
-- **Conditional GET** — sends `If-None-Match` and `If-Modified-Since` headers so unchanged feeds cost one byte of bandwidth
-- **Deduplication** — GUID-based dedup prevents items from being posted twice, even across restarts
-- **Smart formatting** — text-rich items show summaries; image-primary feeds (webcomics) show inline images; boilerplate prefixes and suffixes are stripped automatically
-- **Injection protection** — feed content is sanitised against Discord mention injection, markdown escapes, URL breakout, and newline smuggling
-- **Graceful error handling** — 410 Gone removes the feed automatically; 429/403 back off for at least 4 hours; 5xx errors use exponential backoff up to 24 hours
+- **Slash commands**: Manage feeds from Discord with `/feed add`, `/feed remove`, `/feed list`, `/feed preview`, and `/feed config`
+- **Non-intrusive**: Items from feeds are posted as a minimal message into the desired channel. Text-rich items show a 2-line preview. Image-primary feeds (webcomics) show inline images. Boilerplate prefixes and suffixes are stripped automatically.
+- **Auto-discovery**: Use any URL and CordFeeder will probe for an RSS or Atom feed automatically. Supports most blogs, but also substacks, mastodon & bluesky profiles, etc.
+- **Polite polling**: Uses adaptive polling & conditional GET requests to be nice to the servers & avoid spamming the channels with very frequent updates.
+- **Injection protection**: Feed content is sanitised against Discord mention injection, markdown escapes, URL breakout, and newline smuggling.
 - **Role-based access** — all `/feed` commands default to requiring Manage Server permission; server admins can override this per-role in Server Settings > Integrations
-- **Structured logging** — every event emits a JSON log line for easy ingestion into any log aggregator
 
-## Permissions
+## Use
 
-By default, all `/feed` commands require the **Manage Server** permission. Server admins can change who has access via the Integrations page.
+### Slash commands
+
+All commands live under the `/feed` group.
+
+| Command | Description |
+|---------|-------------|
+| `/feed add <url> [channel]` | Subscribe to a feed. Accepts any URL — the bot auto-discovers the feed. |
+| `/feed add <id> [channel]` | Move an existing feed (by numeric ID) to a different channel. |
+| `/feed remove <id>` | Unsubscribe from a feed. Cleans up all state. |
+| `/feed list` | Show all feeds for this server with their IDs, channels, and poll intervals. |
+| `/feed preview <url or id>` | Fetch a feed and show the latest item without subscribing. |
+| `/feed config` | Show bot status: total feeds, error count, default poll interval. |
+
+All command responses are ephemeral (only visible to the person who ran the command). Feed item posts are public.
+
+
+### Permissions
+
+Server admins control who has access to the /feed commands via the server's Integrations page. By default, @everyone has access. You might not want this!
 
 To configure (desktop Discord only):
 
@@ -35,112 +45,7 @@ To configure (desktop Discord only):
 
 Commands are hidden from users who lack permission to run them.
 
-## Project layout
-
-```bash
-find cordfeeder -name '*.py' | sort | sed 's/^/  /'
-```
-
-```output
-  cordfeeder/__init__.py
-  cordfeeder/__main__.py
-  cordfeeder/bot.py
-  cordfeeder/config.py
-  cordfeeder/database.py
-  cordfeeder/discovery.py
-  cordfeeder/formatter.py
-  cordfeeder/main.py
-  cordfeeder/parser.py
-  cordfeeder/poller.py
-```
-
-Each module has a single responsibility:
-
-| Module | Purpose |
-|--------|---------|
-| `bot.py` | Discord bot, slash command handlers |
-| `poller.py` | Background poll loop, HTTP fetching, error backoff |
-| `parser.py` | RSS/Atom parsing, HTML stripping, boilerplate removal |
-| `formatter.py` | Discord message formatting, injection sanitisation |
-| `discovery.py` | Feed auto-discovery from arbitrary URLs |
-| `database.py` | SQLite schema and queries |
-| `config.py` | Environment-variable configuration |
-| `main.py` | Entry point, structured JSON logging |
-
-## Installation
-
-Requires Python 3.12+. [uv](https://github.com/astral-sh/uv) is recommended but plain pip works too.
-
-```bash
-git clone <this repo>
-cd cordfeeder
-uv sync
-```
-
-Then follow the Discord setup guide in [docs/discord-bot-setup.md](docs/discord-bot-setup.md) to create the bot and generate an invite URL.
-
-## Configuration
-
-Copy `.env.example` to `.env` and fill in your values:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DISCORD_BOT_TOKEN` | *(required)* | Bot authentication token from the Discord Developer Portal |
-| `DEFAULT_POLL_INTERVAL` | `900` | How often to check feeds in seconds (15 minutes). Min 300, max 43200 |
-| `DATABASE_PATH` | `data/cordfeeder.db` | Path to the SQLite database file |
-| `LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
-
-CordFeeder validates configuration on startup and exits with a clear error if `DISCORD_BOT_TOKEN` is missing or if any integer variable is not parseable.
-
-Config validation is enforced at startup — here is what happens when the token is missing:
-
-```python
-
-import os, sys
-os.environ.pop('DISCORD_BOT_TOKEN', None)
-try:
-    from cordfeeder.config import Config
-    Config.from_env()
-except ValueError as e:
-    print(f'ValueError: {e}')
-
-```
-
-```output
-ValueError: DISCORD_BOT_TOKEN environment variable is required
-```
-
-## Running
-
-```bash
-uv run cordfeeder
-```
-
-On first start you will see structured JSON log lines:
-
-```json
-{"ts":"2026-02-27T10:00:00.000Z","level":"INFO","logger":"cordfeeder.main","msg":"starting cordfeeder","host":"myhost","app":"cordfeeder","default_poll_interval":900}
-{"ts":"2026-02-27T10:00:01.234Z","level":"INFO","logger":"cordfeeder.bot","msg":"bot setup complete","host":"myhost","app":"cordfeeder"}
-```
-
-SIGTERM triggers graceful shutdown — the poller finishes any in-flight requests before exiting.
-
-## Slash commands
-
-All commands live under the `/feed` group.
-
-| Command | Who can use | Description |
-|---------|-------------|-------------|
-| `/feed add <url> [channel]` | Feed Manager | Subscribe to a feed. Accepts any URL — the bot auto-discovers the feed. |
-| `/feed add <id> [channel]` | Feed Manager | Move an existing feed (by numeric ID) to a different channel. |
-| `/feed remove <id>` | Feed Manager | Unsubscribe from a feed. Cleans up all state. |
-| `/feed list` | Everyone | Show all feeds for this server with their IDs, channels, and poll intervals. |
-| `/feed preview <url or id>` | Everyone | Fetch a feed and show the latest item without subscribing. |
-| `/feed config` | Feed Manager | Show bot status: total feeds, error count, default poll interval. |
-
-All command responses are ephemeral (only visible to the person who ran the command). Feed item posts are public.
-
-## Feed auto-discovery
+### Feed auto-discovery
 
 You do not need to find the raw RSS/Atom URL. Paste the homepage of a blog or any webpage and CordFeeder will find the feed for you.
 
@@ -152,7 +57,7 @@ Discovery tries three strategies in order:
 
 If none of those work, the command responds with an error.
 
-## Message formatting
+### Message formatting
 
 Each new feed item posts as a plain Discord message (no embed) in this format:
 
@@ -214,7 +119,7 @@ Formatted Discord message:
 > This is the post summary with some HTML.
 ```
 
-## Polling behaviour
+## Polling behaviour (aka "Why haven't my items shown up yet?")
 
 The poll loop runs every 30 seconds and checks for feeds where `next_poll_at <= now`. Polling all due feeds runs concurrently (limited to 2 simultaneous requests per host).
 
@@ -319,7 +224,100 @@ URL breakout:
 
 ```
 
-## Database
+## Development
+
+### Project layout
+
+```bash
+find cordfeeder -name '*.py' | sort | sed 's/^/  /'
+```
+
+```output
+  cordfeeder/__init__.py
+  cordfeeder/__main__.py
+  cordfeeder/bot.py
+  cordfeeder/config.py
+  cordfeeder/database.py
+  cordfeeder/discovery.py
+  cordfeeder/formatter.py
+  cordfeeder/main.py
+  cordfeeder/parser.py
+  cordfeeder/poller.py
+```
+
+Each module has a single responsibility:
+
+| Module | Purpose |
+|--------|---------|
+| `bot.py` | Discord bot, slash command handlers |
+| `poller.py` | Background poll loop, HTTP fetching, error backoff |
+| `parser.py` | RSS/Atom parsing, HTML stripping, boilerplate removal |
+| `formatter.py` | Discord message formatting, injection sanitisation |
+| `discovery.py` | Feed auto-discovery from arbitrary URLs |
+| `database.py` | SQLite schema and queries |
+| `config.py` | Environment-variable configuration |
+| `main.py` | Entry point, structured JSON logging |
+
+### Installation
+
+Requires Python 3.12+. [uv](https://github.com/astral-sh/uv) is recommended but plain pip works too.
+
+```bash
+git clone <this repo>
+cd cordfeeder
+uv sync
+```
+
+Then follow the Discord setup guide in [docs/discord-bot-setup.md](docs/discord-bot-setup.md) to create the bot and generate an invite URL.
+
+### Configuration
+
+Copy `.env.example` to `.env` and fill in your values:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DISCORD_BOT_TOKEN` | *(required)* | Bot authentication token from the Discord Developer Portal |
+| `DEFAULT_POLL_INTERVAL` | `900` | How often to check feeds in seconds (15 minutes). Min 300, max 43200 |
+| `DATABASE_PATH` | `data/cordfeeder.db` | Path to the SQLite database file |
+| `LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
+
+CordFeeder validates configuration on startup and exits with a clear error if `DISCORD_BOT_TOKEN` is missing or if any integer variable is not parseable.
+
+Config validation is enforced at startup — here is what happens when the token is missing:
+
+```python
+
+import os, sys
+os.environ.pop('DISCORD_BOT_TOKEN', None)
+try:
+    from cordfeeder.config import Config
+    Config.from_env()
+except ValueError as e:
+    print(f'ValueError: {e}')
+
+```
+
+```output
+ValueError: DISCORD_BOT_TOKEN environment variable is required
+```
+
+### Running
+
+```bash
+uv run cordfeeder
+```
+
+On first start you will see structured JSON log lines:
+
+```json
+{"ts":"2026-02-27T10:00:00.000Z","level":"INFO","logger":"cordfeeder.main","msg":"starting cordfeeder","host":"myhost","app":"cordfeeder","default_poll_interval":900}
+{"ts":"2026-02-27T10:00:01.234Z","level":"INFO","logger":"cordfeeder.bot","msg":"bot setup complete","host":"myhost","app":"cordfeeder"}
+```
+
+SIGTERM triggers graceful shutdown — the poller finishes any in-flight requests before exiting.
+
+
+### Database
 
 State is stored in two SQLite tables:
 
@@ -328,7 +326,7 @@ State is stored in two SQLite tables:
 
 Cascaded deletes keep everything consistent: removing a feed cleans up all its posted-item records automatically. The database runs in WAL mode for better concurrent read performance.
 
-## Development
+### Building & testing
 
 ```bash
 uv sync               # install all dependencies including dev extras
@@ -344,10 +342,10 @@ uv run pytest --tb=no -q 2>&1
 ```output
 ........................................................................ [ 83%]
 ..............                                                           [100%]
-86 passed, 1 warning in 0.29s
+83 passed, 1 warning in 0.29s
 ```
 
-## Structured logging
+### Structured logging
 
 Every significant event emits a single-line JSON object. This makes logs easy to ship to Datadog, Loki, CloudWatch, or any other log aggregator.
 
@@ -386,9 +384,12 @@ Every log line includes `ts` (ISO 8601 UTC), `level`, `logger`, `msg`, `host`, `
 
 ## Deployment
 
-CordFeeder runs directly under systemd on a DigitalOcean droplet. `infra/deploy.sh` handles ongoing deploys; `infra/setup.sh` provisions the droplet from scratch.
+I have chosen to deploy this as a standalone service on a dedicated DigitalOcean droplet. You could deploy this however you like. Mostly for my records, here's how that's set up:
 
-### DigitalOcean deployment
+CordFeeder runs directly under systemd on a DigitalOcean droplet. See [infra/README.md](infra/README.md) for full configuration reference.
+
+`infra/setup.sh` provisions the droplet from scratch. 
+`infra/deploy.sh` handles ongoing deploys.
 
 Prerequisites: [doctl](https://docs.digitalocean.com/reference/doctl/) CLI and an SSH key at `~/.ssh/id_rsa.pub`.
 
@@ -396,6 +397,7 @@ Prerequisites: [doctl](https://docs.digitalocean.com/reference/doctl/) CLI and a
 brew install doctl
 doctl auth init    # paste your DO API token
 ```
+### Provisioning
 
 **Provision a droplet** (one-time):
 
@@ -403,7 +405,7 @@ doctl auth init    # paste your DO API token
 ./infra/setup.sh
 ```
 
-This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs uv, clones the repo, and enables the systemd unit. Override defaults with `DROPLET_NAME`, `DROPLET_REGION`, or `DROPLET_SIZE` env vars.
+This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs uv, clones the repo, and enables the systemd unit. Override defaults with `DROPLET_NAME`, `DROPLET_REGION`, or `DROPLET_SIZE` env vars. This is NOT IDEMPOTENT i.e. if you run this script again you'll end up with a new "empty" droplet which is costing you money! So, don't do that.
 
 **Copy your secrets and deploy:**
 
@@ -411,16 +413,9 @@ This creates a \$6/mo droplet (Ubuntu 24.04, 1 vCPU, 1 GB), installs uv, clones 
 scp .env root@<DROPLET_IP>:~/cordfeeder/.env
 DROPLET_IP=<DROPLET_IP> ./infra/deploy.sh
 ```
+### Deployment after changes
 
-`infra/deploy.sh` SSHes in, pulls the latest code, syncs dependencies via uv, and restarts the systemd service. On subsequent deploys, just run `infra/deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
-
-**Tear down** when you are done:
-
-```bash
-./infra/teardown.sh
-```
-
-See [infra/README.md](infra/README.md) for full configuration reference.
+`infra/deploy.sh` SSHes in, pulls the latest code from remote, syncs dependencies via uv, and restarts the systemd service. On subsequent deploys, just run `infra/deploy.sh` — it looks up the IP via doctl if `DROPLET_IP` is not set.
 
 ### Monitoring
 
