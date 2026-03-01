@@ -21,6 +21,21 @@ It runs as a single process on any machine that can reach Discord and your feeds
 - **Role-based access** — all `/feed` commands default to requiring Manage Server permission; server admins can override this per-role in Server Settings > Integrations
 - **Structured logging** — every event emits a JSON log line for easy ingestion into any log aggregator
 
+## Permissions
+
+By default, all `/feed` commands require the **Manage Server** permission. Server admins can override this to grant access to any role, user, or channel.
+
+To configure (desktop Discord only):
+
+1. Open **Server Settings** (click the server name, top-left).
+2. Go to the **Integrations** tab.
+3. Find **CordFeeder** in the list and click **Manage**.
+4. You'll see each `/feed` command listed. Click one to add or remove access for specific roles, users, or channels.
+
+For example, to let a "Feed Editor" role manage feeds without Manage Server: click a command, add the role, and toggle it on. The command will show **Not Synced** once its permissions differ from the app-level default — this is normal.
+
+Commands are hidden from users who lack permission to run them.
+
 ## Project layout
 
 ```bash
