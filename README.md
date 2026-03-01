@@ -30,9 +30,9 @@ To configure (desktop Discord only):
 1. Open **Server Settings** (click the server name, top-left).
 2. Go to the **Integrations** tab.
 3. Find **CordFeeder** in the list and click **Manage**.
-4. Click the `/feed` command to add or remove access for specific roles, users, or channels.
+4. Click the `/feed` command. Under **Roles & Members**, click **Add roles or members** and grant access to the roles or users you want.
 
-For example, to let a "Feed Editor" role manage feeds without Manage Server: click `/feed`, add the role, and toggle it on. The command will show **Not Synced** once its permissions differ from the app-level default — this is normal.
+For example, to let a "Feed Editor" role manage feeds without Manage Server: add the role and toggle it on. The command will show **Not Synced** once its permissions differ from the app-level default — this is normal.
 
 Commands are hidden from users who lack permission to run them.
 
