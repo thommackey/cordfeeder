@@ -154,6 +154,7 @@ class FeedCog(commands.Cog):
         # Post initial items (most recent N, oldest-first)
         count = self.bot.config.initial_items_count
         initial = items[:count] if items else []
+        post_failed = False
         for item in reversed(initial):
             content = format_item_message(
                 item=item,
@@ -166,13 +167,20 @@ class FeedCog(commands.Cog):
                 logger.warning(
                     "failed to post initial item",
                     extra={"feed_id": feed_id, "guid": item.guid},
+                    exc_info=True,
                 )
+                post_failed = True
                 break
 
-        await interaction.followup.send(
-            f"Subscribed to **{safe}** (ID `{feed_id}`) in {target_channel.mention}.",
-            ephemeral=True,
-        )
+        ch = target_channel.mention
+        reply = f"Subscribed to **{safe}** (ID `{feed_id}`) in {ch}."
+        if post_failed:
+            reply += (
+                "\n\n**Warning:** I couldn't post initial items to the channel. "
+                "Check the bot has **Send Messages** permission and was invited "
+                "with the **bot** OAuth scope (not just *applications.commands*)."
+            )
+        await interaction.followup.send(reply, ephemeral=True)
         logger.info(
             "feed added via command",
             extra={"feed_id": feed_id, "url": feed_url, "guild_id": guild},
