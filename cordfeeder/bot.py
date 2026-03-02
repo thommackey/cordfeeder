@@ -378,6 +378,7 @@ class CordFeederBot(commands.Bot):
     async def setup_hook(self) -> None:
         cog = FeedCog(self)
         await self.add_cog(cog)
+        self.tree.error(self._on_tree_error)
         await self.tree.sync()
         await self.poller.start()
         logger.info("bot setup complete")
@@ -387,3 +388,52 @@ class CordFeederBot(commands.Bot):
         await self.db.close()
         await super().close()
         logger.info("bot shut down")
+
+    @staticmethod
+    async def _on_tree_error(
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        """Handle command tree errors without spewing full tracebacks.
+
+        Transient Discord API errors (expired/duplicate interactions) are
+        logged at INFO level. Genuine command failures are logged as errors
+        and, where possible, a user-visible message is sent.
+        """
+        original = getattr(error, "original", error)
+
+        # Interaction expired (>3s to defer) or already acknowledged (duplicate)
+        if isinstance(original, (discord.NotFound, discord.HTTPException)):
+            code = getattr(original, "code", None)
+            if code in (10062, 40060):
+                logger.info(
+                    "transient interaction error",
+                    extra={
+                        "command": interaction.command.name
+                        if interaction.command
+                        else "unknown",
+                        "code": code,
+                        "detail": str(original),
+                    },
+                )
+                return
+
+        logger.error(
+            "unhandled command error",
+            extra={
+                "command": interaction.command.name
+                if interaction.command
+                else "unknown",
+            },
+            exc_info=error,
+        )
+
+        # Try to notify the user if the interaction is still usable
+        try:
+            msg = "Something went wrong. Please try again."
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except discord.HTTPException:
+            pass
