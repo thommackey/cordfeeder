@@ -210,7 +210,7 @@ class Poller:
                     raise ValueError(
                         f"Feed response too large (>{MAX_FEED_BYTES // 1024 // 1024}MB)"
                     )
-                encoding = resp.get_encoding() or "utf-8"
+                encoding = resp.charset or "utf-8"
                 body = raw.decode(encoding, errors="replace")
                 items = parse_feed(body)
 

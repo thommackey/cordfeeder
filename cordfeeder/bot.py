@@ -91,6 +91,10 @@ class FeedCog(commands.Cog):
         try:
             feed_url = await discover_feed_url(url_or_id, http, _CMD_TIMEOUT)
         except FeedNotFoundError:
+            logger.info(
+                "no feed found at url",
+                extra={"url": url_or_id, "guild_id": guild},
+            )
             await interaction.followup.send(
                 "No RSS/Atom feed found at that URL.", ephemeral=True
             )
@@ -101,12 +105,17 @@ class FeedCog(commands.Cog):
                 raw = await resp.content.read(MAX_FEED_BYTES + 1)
                 if len(raw) > MAX_FEED_BYTES:
                     raise ValueError("Feed response too large")
-                encoding = resp.get_encoding() or "utf-8"
+                encoding = resp.charset or "utf-8"
                 body = raw.decode(encoding, errors="replace")
 
             items = parse_feed(body)
             metadata = extract_feed_metadata(body)
         except Exception as exc:
+            logger.warning(
+                "failed to fetch or parse feed",
+                extra={"url": feed_url, "guild_id": guild},
+                exc_info=True,
+            )
             await interaction.followup.send(
                 f"Failed to fetch or parse feed: {exc}", ephemeral=True
             )
@@ -266,6 +275,10 @@ class FeedCog(commands.Cog):
             try:
                 feed_url = await discover_feed_url(feed_url, http, _CMD_TIMEOUT)
             except FeedNotFoundError:
+                logger.info(
+                    "no feed found at url",
+                    extra={"url": url_or_id},
+                )
                 await interaction.followup.send(
                     "No RSS/Atom feed found at that URL.", ephemeral=True
                 )
@@ -276,12 +289,17 @@ class FeedCog(commands.Cog):
                 raw = await resp.content.read(MAX_FEED_BYTES + 1)
                 if len(raw) > MAX_FEED_BYTES:
                     raise ValueError("Feed response too large")
-                encoding = resp.get_encoding() or "utf-8"
+                encoding = resp.charset or "utf-8"
                 body = raw.decode(encoding, errors="replace")
 
             items = parse_feed(body)
             metadata = extract_feed_metadata(body)
         except Exception as exc:
+            logger.warning(
+                "failed to fetch or parse feed",
+                extra={"url": feed_url},
+                exc_info=True,
+            )
             await interaction.followup.send(
                 f"Failed to fetch or parse feed: {exc}", ephemeral=True
             )

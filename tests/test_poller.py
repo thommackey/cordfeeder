@@ -173,7 +173,7 @@ class TestFetchFeed:
         mock_content = AsyncMock()
         mock_content.read = AsyncMock(return_value=body_bytes)
         mock_response.content = mock_content
-        mock_response.get_encoding = MagicMock(return_value="utf-8")
+        mock_response.charset = "utf-8"
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
         return mock_response
@@ -304,7 +304,7 @@ class TestWarmupPolling:
         mock_content = AsyncMock()
         mock_content.read = AsyncMock(return_value=body_bytes)
         mock_response.content = mock_content
-        mock_response.get_encoding = MagicMock(return_value="utf-8")
+        mock_response.charset = "utf-8"
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
         return mock_response
